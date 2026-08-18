@@ -1,1 +1,18 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Virtual environment
 .venv/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Data generated
+*.csv
+*.json
+*.db
+
+# OS
+.DS_Store.venv/
