@@ -1,3 +1,4 @@
+from .quantum_espresso import QuantumEspressoCalculator
 from .calculator import DFTCalculator
 from .output import DFTResult
 from .exceptions import (
@@ -15,4 +16,5 @@ __all__ = [
     "DFTInputError",
     "DFTRunError",
     "DFTParseError",
+    "QuantumEspressoCalculator",
 ]
