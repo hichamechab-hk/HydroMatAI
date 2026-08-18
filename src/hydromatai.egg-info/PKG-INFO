@@ -1,0 +1,15 @@
+Metadata-Version: 2.4
+Name: hydromatai
+Version: 0.1.0
+Summary: AI-driven platform for hydrogen storage materials discovery
+Author: HydroMatAI Development Team
+License: MIT
+Requires-Python: >=3.12
+Description-Content-Type: text/markdown
+
+# HydroMatAI
+
+AI-driven platform for the discovery of hydrogen storage materials.
+
+HydroMatAI combines DFT, machine learning, graph neural networks,
+and active learning for computational materials discovery.

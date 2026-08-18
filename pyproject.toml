@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "hydromatai"
+version = "0.1.0"
+description = "AI-driven platform for hydrogen storage materials discovery"
+readme = "README.md"
+requires-python = ">=3.12"
+license = {text = "MIT"}
+
+authors = [
+    {name = "HydroMatAI Development Team"}
+]
+
+dependencies = []
+
+[tool.black]
+line-length = 88
+
+[tool.ruff]
+line-length = 88
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
