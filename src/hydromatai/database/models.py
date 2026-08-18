@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Float, Text
+from sqlalchemy import Column, Integer, String, Float, Text, JSON
 from sqlalchemy.orm import declarative_base
 
 
@@ -49,6 +49,10 @@ class MaterialModel(Base):
         nullable=True
     )
 
+    forces = Column(
+        JSON,
+        nullable=True
+    )
     def __repr__(self):
         return (
             f"<MaterialModel "

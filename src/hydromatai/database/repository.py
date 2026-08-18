@@ -45,6 +45,11 @@ class MaterialRepository:
                 if dft_result is not None
                 else None
             ),
+            forces=(
+                dft_result.forces
+                if dft_result is not None
+                else None
+            ),
         )
 
         self.session.add(record)
@@ -57,30 +62,23 @@ class MaterialRepository:
     def get_by_formula(self, formula: str):
         """
         Recherche un matériau par formule chimique.
-
-        Retourne le même objet MaterialRecord s'il a déjà
-        été ajouté à ce repository. Sinon, reconstruit un
-        MaterialRecord depuis SQLite.
         """
 
-        # Vérifier d'abord les objets déjà chargés.
         for material in self._records:
             if material.formula == formula:
                 return material
 
-        # Recherche dans SQLite.
         record = (
-    self.session
-    .query(MaterialModel)
-    .filter(MaterialModel.formula == formula)
-    .order_by(MaterialModel.id.desc())
-    .first()
-)
+            self.session
+            .query(MaterialModel)
+            .filter(MaterialModel.formula == formula)
+            .order_by(MaterialModel.id.desc())
+            .first()
+        )
 
         if record is None:
             return None
 
-        # Reconstruire le résultat DFT.
         dft_result = None
 
         if record.dft_success is not None:
@@ -88,6 +86,7 @@ class MaterialRepository:
                 success=bool(record.dft_success),
                 total_energy=record.total_energy,
                 band_gap=record.band_gap,
+                forces=record.forces,
             )
 
         material = MaterialRecord(
@@ -124,6 +123,7 @@ class MaterialRepository:
                     success=bool(record.dft_success),
                     total_energy=record.total_energy,
                     band_gap=record.band_gap,
+                    forces=record.forces,
                 )
 
             material = MaterialRecord(
