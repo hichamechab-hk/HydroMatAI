@@ -39,9 +39,49 @@ class MaterialModel(Base):
         nullable=True
     )
 
+    dft_success = Column(
+        Integer,
+        nullable=True
+    )
+
+    total_energy = Column(
+        Float,
+        nullable=True
+    )
+
     def __repr__(self):
         return (
             f"<MaterialModel "
             f"name={self.name}, "
             f"formula={self.formula}>"
         )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

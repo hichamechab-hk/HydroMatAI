@@ -1,3 +1,5 @@
+from hydromatai.dft import DFTResult
+
 from .models import MaterialModel
 from .record import MaterialRecord
 from .storage import get_session
@@ -15,7 +17,7 @@ class MaterialRepository:
     def add(self, material: MaterialRecord):
         """
         Ajoute un MaterialRecord dans le repository
-        et le persiste dans la base.
+        et le persiste dans la base SQLite.
         """
 
         if not isinstance(material, MaterialRecord):
@@ -23,9 +25,26 @@ class MaterialRepository:
                 "material must be a MaterialRecord"
             )
 
+        dft_result = material.dft_result
+
         record = MaterialModel(
             name=material.name or material.formula,
             formula=material.formula,
+            dft_success=(
+                int(dft_result.success)
+                if dft_result is not None
+                else None
+            ),
+            total_energy=(
+                dft_result.total_energy
+                if dft_result is not None
+                else None
+            ),
+            band_gap=(
+                dft_result.band_gap
+                if dft_result is not None
+                else None
+            ),
         )
 
         self.session.add(record)
@@ -38,27 +57,43 @@ class MaterialRepository:
     def get_by_formula(self, formula: str):
         """
         Recherche un matériau par formule chimique.
+
+        Retourne le même objet MaterialRecord s'il a déjà
+        été ajouté à ce repository. Sinon, reconstruit un
+        MaterialRecord depuis SQLite.
         """
 
-        # Retourner le même objet si déjà chargé
+        # Vérifier d'abord les objets déjà chargés.
         for material in self._records:
             if material.formula == formula:
                 return material
 
-        # Sinon, rechercher dans SQLite
+        # Recherche dans SQLite.
         record = (
-            self.session
-            .query(MaterialModel)
-            .filter(MaterialModel.formula == formula)
-            .first()
-        )
+    self.session
+    .query(MaterialModel)
+    .filter(MaterialModel.formula == formula)
+    .order_by(MaterialModel.id.desc())
+    .first()
+)
 
         if record is None:
             return None
 
+        # Reconstruire le résultat DFT.
+        dft_result = None
+
+        if record.dft_success is not None:
+            dft_result = DFTResult(
+                success=bool(record.dft_success),
+                total_energy=record.total_energy,
+                band_gap=record.band_gap,
+            )
+
         material = MaterialRecord(
             formula=record.formula,
             name=record.name,
+            dft_result=dft_result,
         )
 
         self._records.append(material)
@@ -79,12 +114,24 @@ class MaterialRepository:
             .all()
         )
 
-        self._records = [
-            MaterialRecord(
+        self._records = []
+
+        for record in records:
+            dft_result = None
+
+            if record.dft_success is not None:
+                dft_result = DFTResult(
+                    success=bool(record.dft_success),
+                    total_energy=record.total_energy,
+                    band_gap=record.band_gap,
+                )
+
+            material = MaterialRecord(
                 formula=record.formula,
                 name=record.name,
+                dft_result=dft_result,
             )
-            for record in records
-        ]
+
+            self._records.append(material)
 
         return list(self._records)
