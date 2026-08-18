@@ -1,6 +1,7 @@
 from hydromatai.database import (
     create_database,
-    MaterialRepository
+    MaterialRecord,
+    MaterialRepository,
 )
 
 
@@ -10,13 +11,14 @@ def test_material_repository():
 
     repo = MaterialRepository()
 
-    repo.add(
-        {
-            "name": "Water",
-            "formula": "H2O"
-        }
+    material = MaterialRecord(
+        name="Water",
+        formula="H2O",
     )
 
-    results = repo.get_by_formula("H2O")
+    repo.add(material)
 
-    assert len(results) >= 1
+    result = repo.get_by_formula("H2O")
+
+    assert result is material
+    assert result.formula == "H2O"

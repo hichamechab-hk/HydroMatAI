@@ -5,9 +5,9 @@ from sqlalchemy.orm import declarative_base
 Base = declarative_base()
 
 
-class MaterialRecord(Base):
+class MaterialModel(Base):
     """
-    Modèle de stockage d'un matériau HydroMatAI.
+    Modèle SQLAlchemy pour le stockage d'un matériau.
     """
 
     __tablename__ = "materials"
@@ -39,10 +39,9 @@ class MaterialRecord(Base):
         nullable=True
     )
 
-
     def __repr__(self):
         return (
-            f"<MaterialRecord "
+            f"<MaterialModel "
             f"name={self.name}, "
             f"formula={self.formula}>"
         )

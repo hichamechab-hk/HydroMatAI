@@ -1,4 +1,5 @@
-from .models import MaterialRecord
+from .models import MaterialModel
+from .record import MaterialRecord
 from .storage import get_session
 
 
@@ -7,54 +8,47 @@ class MaterialRepository:
     Gestion des matériaux dans HydroMatAI.
     """
 
-
     def __init__(self):
         self.session = get_session()
+        self._records = []
 
-
-    def add(self, material):
+    def add(self, material: MaterialRecord):
         """
-        Ajoute un matériau.
+        Ajoute un MaterialRecord dans le repository
+        et le persiste dans la base.
         """
 
-        record = MaterialRecord(
-            name=material["name"],
-            formula=material["formula"],
-            description=material.get("description"),
-            density=material.get("density"),
-            band_gap=material.get("band_gap")
+        if not isinstance(material, MaterialRecord):
+            raise TypeError(
+                "material must be a MaterialRecord"
+            )
+
+        record = MaterialModel(
+            name=material.name or material.formula,
+            formula=material.formula,
         )
 
         self.session.add(record)
         self.session.commit()
 
-        return record
+        self._records.append(material)
 
+        return material
 
-
-    def get_by_formula(self, formula):
+    def get_by_formula(self, formula: str):
         """
-        Recherche par formule chimique.
+        Retourne le MaterialRecord correspondant à la formule.
         """
 
-        return (
-            self.session
-            .query(MaterialRecord)
-            .filter(
-                MaterialRecord.formula == formula
-            )
-            .all()
-        )
+        for material in self._records:
+            if material.formula == formula:
+                return material
 
-
+        return None
 
     def list_all(self):
         """
-        Liste tous les matériaux.
+        Retourne tous les MaterialRecord du repository.
         """
 
-        return (
-            self.session
-            .query(MaterialRecord)
-            .all()
-        )
+        return list(self._records)
