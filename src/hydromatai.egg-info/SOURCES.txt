@@ -1,7 +1,0 @@
-README.md
-pyproject.toml
-src/hydromatai/__init__.py
-src/hydromatai.egg-info/PKG-INFO
-src/hydromatai.egg-info/SOURCES.txt
-src/hydromatai.egg-info/dependency_links.txt
-src/hydromatai.egg-info/top_level.txt
