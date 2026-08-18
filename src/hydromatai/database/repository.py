@@ -37,18 +37,54 @@ class MaterialRepository:
 
     def get_by_formula(self, formula: str):
         """
-        Retourne le MaterialRecord correspondant à la formule.
+        Recherche un matériau par formule chimique.
         """
 
+        # Retourner le même objet si déjà chargé
         for material in self._records:
             if material.formula == formula:
                 return material
 
-        return None
+        # Sinon, rechercher dans SQLite
+        record = (
+            self.session
+            .query(MaterialModel)
+            .filter(MaterialModel.formula == formula)
+            .first()
+        )
+
+        if record is None:
+            return None
+
+        material = MaterialRecord(
+            formula=record.formula,
+            name=record.name,
+        )
+
+        self._records.append(material)
+
+        return material
 
     def list_all(self):
         """
-        Retourne tous les MaterialRecord du repository.
+        Retourne tous les matériaux.
         """
+
+        if self._records:
+            return list(self._records)
+
+        records = (
+            self.session
+            .query(MaterialModel)
+            .all()
+        )
+
+        self._records = [
+            MaterialRecord(
+                formula=record.formula,
+                name=record.name,
+            )
+            for record in records
+        ]
 
         return list(self._records)
