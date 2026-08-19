@@ -21,3 +21,13 @@ __pycache__/
 *.egg-info/
 build/
 dist/
+
+# Quantum ESPRESSO / DFT calculations
+calculations/
+
+# Temporary QE input files
+input_tmp.in
+
+# Python cache
+__pycache__/
+*.pyc
