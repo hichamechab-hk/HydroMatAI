@@ -72,8 +72,8 @@ def test_quantum_espresso_prepare_input(tmp_path: Path):
     assert "O" in content
 
     assert "ATOMIC_POSITIONS" in content
-    assert "Ti 0.0 0.0 0.0" in content
-    assert "O 0.5 0.5 0.5" in content
-    assert "O 0.5 0.0 0.0" in content
+    assert "Ti 0.00000000 0.00000000 0.00000000" in content
+    assert "O 0.50000000 0.50000000 0.50000000" in content
+    assert "O 0.50000000 0.00000000 0.00000000" in content
 
     assert "K_POINTS automatic" in content
