@@ -24,6 +24,16 @@ PSEUDOPOTENTIALS = {
 class QEInputGenerator:
     """
     Générateur de fichiers d'entrée Quantum ESPRESSO.
+
+    Paramètres principaux :
+        calculation : type de calcul QE ('scf', 'relax', 'vc-relax', ...)
+        prefix      : préfixe Quantum ESPRESSO
+        pseudo_dir  : répertoire des pseudopotentiels
+        ecutwfc     : cutoff des fonctions d'onde en Ry
+        ecutrho     : cutoff de la densité électronique en Ry
+        k_points    : grille k-points (kx, ky, kz)
+        smearing    : active le smearing pour les systèmes métalliques
+        degauss     : largeur du smearing en Ry
     """
 
     def __init__(
@@ -31,14 +41,27 @@ class QEInputGenerator:
         calculation: str = "scf",
         prefix: str = "hydromatai",
         pseudo_dir: str = "/usr/share/espresso/pseudo/",
+        ecutwfc: float = 50.0,
+        ecutrho: float = 400.0,
+        k_points: tuple[int, int, int] = (12, 12, 1),
+        smearing: bool = True,
+        degauss: float = 0.02,
     ):
         self.calculation = calculation
         self.prefix = prefix
         self.pseudo_dir = pseudo_dir
 
-    def write(self, structure, workdir: Path) -> Path:
+        self.ecutwfc = ecutwfc
+        self.ecutrho = ecutrho
+
+        self.k_points = k_points
+
+        self.smearing = smearing
+        self.degauss = degauss
+
+    def write(self, structure, workdir: Path, material_name: str = "Unknown") -> Path:
         """
-        Génère un fichier scf.in Quantum ESPRESSO.
+        Génère un fichier d'entrée Quantum ESPRESSO.
         """
 
         workdir = Path(workdir)
@@ -51,9 +74,9 @@ class QEInputGenerator:
                 "La structure ne contient aucun atome."
             )
 
-        # --------------------------------------------------------
-        # Éléments présents dans la structure
-        # --------------------------------------------------------
+        # ========================================================
+        # Déterminer les espèces atomiques
+        # ========================================================
 
         symbols = []
 
@@ -61,9 +84,9 @@ class QEInputGenerator:
             if atom.symbol not in symbols:
                 symbols.append(atom.symbol)
 
-        # --------------------------------------------------------
-        # Vérification des masses et pseudopotentiels
-        # --------------------------------------------------------
+        # ========================================================
+        # Vérifier masses et pseudopotentiels
+        # ========================================================
 
         for symbol in symbols:
 
@@ -77,9 +100,9 @@ class QEInputGenerator:
                     f"Pseudopotentiel absent pour l'élément {symbol}."
                 )
 
-        # --------------------------------------------------------
+        # ========================================================
         # ATOMIC_SPECIES
-        # --------------------------------------------------------
+        # ========================================================
 
         atomic_species = "\n".join(
             f"{symbol} "
@@ -88,9 +111,9 @@ class QEInputGenerator:
             for symbol in symbols
         )
 
-        # --------------------------------------------------------
+        # ========================================================
         # ATOMIC_POSITIONS
-        # --------------------------------------------------------
+        # ========================================================
 
         atomic_positions = "\n".join(
             f"{atom.symbol} "
@@ -100,19 +123,24 @@ class QEInputGenerator:
             for atom in atoms
         )
 
-        # --------------------------------------------------------
+        # ========================================================
         # CELL_PARAMETERS
-        # --------------------------------------------------------
+        # ========================================================
 
         cell = getattr(
-            structure,
-            "cell",
-            [
-                [10.0, 0.0, 0.0],
-                [0.0, 10.0, 0.0],
-                [0.0, 0.0, 10.0],
-            ],
-        )
+    structure,
+    "cell",
+    [
+        [10.0, 0.0, 0.0],
+        [0.0, 10.0, 0.0],
+        [0.0, 0.0, 10.0],
+    ],
+    )
+
+        if len(cell) != 3:
+            raise ValueError(
+                "La cellule doit contenir exactement 3 vecteurs."
+            )
 
         cell_parameters = "\n".join(
             f"{vector[0]:.8f} "
@@ -121,19 +149,33 @@ class QEInputGenerator:
             for vector in cell
         )
 
-        # --------------------------------------------------------
-        # Nom du matériau
-        # --------------------------------------------------------
+        # ========================================================
+        # K_POINTS
+        # ========================================================
 
-        material_name = getattr(
-            structure,
-            "name",
-            "Unknown",
+        kx, ky, kz = self.k_points
+
+        k_points_block = (
+            "K_POINTS automatic\n"
+            f"{kx} {ky} {kz} 0 0 0"
         )
 
-        # --------------------------------------------------------
-        # Fichier d'entrée Quantum ESPRESSO
-        # --------------------------------------------------------
+        # ========================================================
+        # SMearing
+        # ========================================================
+
+        smearing_block = ""
+
+        if self.smearing:
+            smearing_block = (
+                "    occupations = 'smearing',\n"
+                "    smearing = 'mv',\n"
+                f"    degauss = {self.degauss:.6f},\n"
+            )
+
+        # ========================================================
+        # Fichier QE complet
+        # ========================================================
 
         content = f"""! HydroMatAI Quantum ESPRESSO input
 ! Material: {material_name}
@@ -148,9 +190,9 @@ class QEInputGenerator:
     ibrav = 0,
     nat = {len(atoms)},
     ntyp = {len(symbols)},
-    ecutwfc = 50.0,
-    ecutrho = 400.0,
-/
+    ecutwfc = {self.ecutwfc:.1f},
+    ecutrho = {self.ecutrho:.1f},
+{smearing_block}/
 
 &ELECTRONS
     conv_thr = 1.0d-8,
@@ -166,18 +208,18 @@ ATOMIC_POSITIONS angstrom
 CELL_PARAMETERS angstrom
 {cell_parameters}
 
-K_POINTS automatic
-1 1 1 0 0 0
+{k_points_block}
 """
 
-        # --------------------------------------------------------
-        # Écriture du fichier
-        # --------------------------------------------------------
+        # ========================================================
+        # Écriture
+        # ========================================================
 
         input_file = workdir / "scf.in"
 
         input_file.write_text(
-            content.strip() + "\n"
+            content.strip() + "\n",
+            encoding="utf-8",
         )
 
         return input_file

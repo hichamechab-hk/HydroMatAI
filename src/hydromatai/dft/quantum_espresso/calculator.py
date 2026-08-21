@@ -45,11 +45,25 @@ class QuantumEspressoCalculator(DFTCalculator):
                 "Le matériau doit posséder une structure."
             )
 
+        # Nom utilisé dans l'en-tête du fichier QE.
+        # Exemple :
+        # ! Material: TiO2
+        material_name = getattr(material, "formula", None)
+
+        if not material_name:
+            material_name = getattr(
+                material,
+                "name",
+                "Unknown",
+            )
+
         try:
             return self.input_generator.write(
                 structure,
                 self.workdir,
+                material_name=material_name,
             )
+
         except Exception as exc:
             raise DFTInputError(
                 f"Impossible de générer l'entrée QE : {exc}"
@@ -59,6 +73,11 @@ class QuantumEspressoCalculator(DFTCalculator):
         """
         Exécute Quantum ESPRESSO.
         """
+
+        if self.runner is None:
+            raise DFTInputError(
+                "Aucun runner Quantum ESPRESSO n'a été configuré."
+            )
 
         self.output = self.runner.run(self.workdir)
 
