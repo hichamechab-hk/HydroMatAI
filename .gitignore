@@ -31,3 +31,14 @@ input_tmp.in
 # Python cache
 __pycache__/
 *.pyc
+
+# HydroMatAI generated scientific results
+/results/
+
+# Temporary DFT / pseudopotential files
+tmp.pp
+*.pp
+
+# Generated Python bytecode
+__pycache__/
+*.py[cod]
