@@ -58,6 +58,44 @@ class QEParser:
         )
 
     # ============================================================
+    # ELECTRONIC LEVELS
+    # ============================================================
+
+    def _parse_electronic_levels(self, raw_output: str):
+        """
+        Extrait VBM, CBM et énergie de Fermi depuis une sortie QE.
+        """
+
+        pattern = re.compile(
+            r"highest occupied, lowest unoccupied level\s*"
+            r"\(ev\):\s*"
+            r"([-+]?\d+(?:\.\d+)?(?:[EeDd][-+]?\d+)?)\s+"
+            r"([-+]?\d+(?:\.\d+)?(?:[EeDd][-+]?\d+)?)",
+            re.IGNORECASE,
+        )
+
+        match = pattern.search(raw_output)
+
+        if match:
+            vbm = self._to_float(match.group(1))
+            cbm = self._to_float(match.group(2))
+            return vbm, cbm, None
+
+        fermi_pattern = re.compile(
+            r"the Fermi energy is\s+"
+            r"([-+]?\d+(?:\.\d+)?(?:[EeDd][-+]?\d+)?)\s+ev",
+            re.IGNORECASE,
+        )
+
+        match = fermi_pattern.search(raw_output)
+
+        if match:
+            fermi = self._to_float(match.group(1))
+            return None, None, fermi
+
+        return None, None, None
+
+    # ============================================================
     # ATOMIC POSITIONS
     # ============================================================
 
@@ -314,13 +352,29 @@ class QEParser:
         )
 
         # --------------------------------------------------------
+        # 5b. NIVEAUX ÉLECTRONIQUES
+        # --------------------------------------------------------
+
+        vbm, cbm, fermi_energy = self._parse_electronic_levels(
+            raw_output
+        )
+
+        band_gap = None
+
+        if vbm is not None and cbm is not None:
+            band_gap = max(0.0, cbm - vbm)
+
+        # --------------------------------------------------------
         # 6. RÉSULTAT DFT
         # --------------------------------------------------------
 
         return DFTResult(
             success=True,
             total_energy=total_energy,
-            band_gap=None,
+            band_gap=band_gap,
+            vbm=vbm,
+            cbm=cbm,
+            fermi_energy=fermi_energy,
             forces=forces,
 
             # IMPORTANT :

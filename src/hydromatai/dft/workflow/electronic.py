@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from typing import Optional
 
 
+from hydromatai.properties.electronic.analyzer import interpret_band_gap
 @dataclass
 class ElectronicWorkflowResult:
     """
@@ -155,6 +156,21 @@ class ElectronicWorkflow:
 
             result.bands_success = True
 
+            # Récupération des propriétés électroniques
+            # directement depuis la sortie du calcul BANDS.
+            if hasattr(output, "vbm"):
+                result.vbm = output.vbm
+
+            if hasattr(output, "cbm"):
+                result.cbm = output.cbm
+
+            if hasattr(output, "band_gap"):
+                result.band_gap = output.band_gap
+
+            if result.band_gap is None:
+                if result.vbm is not None and result.cbm is not None:
+                    result.band_gap = result.cbm - result.vbm
+
         except Exception as exc:
             result.status = self.FAIL_BANDS
             result.error_type = "BANDS"
@@ -206,6 +222,16 @@ class ElectronicWorkflow:
             result.error_type = "PDOS"
             result.error_message = str(exc)
             return result
+
+        # ======================================================
+        # ANALYSE ÉLECTRONIQUE
+        # ======================================================
+
+        interpretation = interpret_band_gap(
+            result.band_gap
+        )
+
+        result.classification = interpretation.classification
 
         # ======================================================
         # FIN

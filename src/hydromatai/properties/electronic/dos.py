@@ -35,11 +35,24 @@ def parse_dos_file(path: str | Path) -> DOSData:
     energies = []
     values = []
 
+    fermi_energy = None
+
     with path.open("r", encoding="utf-8", errors="ignore") as handle:
         for line in handle:
             line = line.strip()
 
-            if not line or line.startswith("#"):
+            if not line:
+                continue
+
+            if line.startswith("#"):
+                match = re.search(
+                    r"EFermi\s*=\s*([-+0-9.EeDd]+)",
+                    line,
+                    re.IGNORECASE,
+                )
+                if match:
+                    value = match.group(1).replace("D", "E").replace("d", "e")
+                    fermi_energy = float(value)
                 continue
 
             parts = line.split()
@@ -54,6 +67,107 @@ def parse_dos_file(path: str | Path) -> DOSData:
     return DOSData(
         energy=energies,
         values=values,
+        fermi_energy=fermi_energy,
+    )
+
+
+@dataclass
+class PDOSData:
+    """Projected Density of States data."""
+
+    energy: list[float]
+    channels: dict[str, list[float]]
+    fermi_energy: float | None = None
+
+
+def parse_pdos_file(path: str | Path) -> PDOSData:
+    """
+    Parse un fichier PDOS Quantum ESPRESSO.
+
+    Le premier champ numérique est considéré comme l'énergie.
+    Les colonnes suivantes sont conservées comme canaux PDOS.
+    """
+
+    path = Path(path)
+
+    energy = []
+    columns = []
+    fermi_energy = None
+
+    with path.open("r", encoding="utf-8", errors="ignore") as handle:
+        for line in handle:
+            line = line.strip()
+
+            if not line:
+                continue
+
+            if line.startswith("#"):
+                continue
+
+            parts = line.split()
+
+            try:
+                values = [float(value) for value in parts]
+            except ValueError:
+                continue
+
+            if len(values) < 2:
+                continue
+
+            energy.append(values[0])
+
+            if not columns:
+                columns = [[] for _ in values[1:]]
+
+            for index, value in enumerate(values[1:]):
+                if index < len(columns):
+                    columns[index].append(value)
+
+    channels = {
+        f"channel_{index + 1}": values
+        for index, values in enumerate(columns)
+    }
+
+    return PDOSData(
+        energy=energy,
+        channels=channels,
+        fermi_energy=fermi_energy,
+    )
+
+
+def total_pdos(data: PDOSData) -> list[float]:
+    """Calcule le PDOS total en additionnant tous les canaux."""
+
+    if not data.channels:
+        return []
+
+    number_of_points = len(data.energy)
+
+    return [
+        sum(
+            values[index]
+            for values in data.channels.values()
+            if index < len(values)
+        )
+        for index in range(number_of_points)
+    ]
+
+
+def find_pdos_band_gap(
+    data: PDOSData,
+    threshold: float = 1e-8,
+) -> float | None:
+    """Détermine le gap à partir du PDOS total."""
+
+    dos = total_pdos(data)
+
+    if not dos:
+        return None
+
+    return find_band_gap(
+        data.energy,
+        dos,
+        threshold=threshold,
     )
 
 
