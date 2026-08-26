@@ -6,18 +6,28 @@ from .dielectric import (
     refractive_index,
     extinction_coefficient,
     reflectivity,
+    energy_loss_function,
 )
 
 from .optical import calculate_optical_properties
-from .analyzer import OpticalInterpretation, interpret_optical_data
+
+from .analyzer import (
+    OpticalInterpretation,
+    interpret_optical_data,
+    analyze_optical,
+)
+
+from .result import OpticalResult
+
+from .workflow import OpticalWorkflow
+
 
 __all__ = [
     "DielectricData",
+    "OpticalResult",
+    "OpticalWorkflow",
     "read_dielectric_file",
-    "refractive_index",
-    "extinction_coefficient",
-    "reflectivity",
     "calculate_optical_properties",
-    "OpticalInterpretation",
-    "interpret_optical_data",
+    "energy_loss_function",
+    "analyze_optical",
 ]

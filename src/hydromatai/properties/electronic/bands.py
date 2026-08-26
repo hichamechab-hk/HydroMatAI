@@ -14,18 +14,18 @@ class BandData:
 
 
 def read_band_data(path: str | Path) -> BandData:
-    """Read a simple whitespace-separated band data file.
+    """Read a whitespace-separated band data file.
 
     Expected format:
         k  band1  band2  band3 ...
 
-    Blank lines are ignored.
+    Blank lines, comments and invalid lines are ignored.
     """
 
     path = Path(path)
 
-    kpoints = []
-    rows = []
+    kpoints: list[float] = []
+    rows: list[list[float]] = []
 
     with path.open("r", encoding="utf-8", errors="ignore") as handle:
         for line in handle:
@@ -41,9 +41,11 @@ def read_band_data(path: str | Path) -> BandData:
             except ValueError:
                 continue
 
-            if len(values) >= 2:
-                kpoints.append(values[0])
-                rows.append(values[1:])
+            if len(values) < 2:
+                continue
+
+            kpoints.append(values[0])
+            rows.append(values[1:])
 
     if not rows:
         return BandData([], [])

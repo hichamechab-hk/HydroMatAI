@@ -101,3 +101,25 @@ def reflectivity(
         return 0.0
 
     return numerator / denominator
+
+
+def energy_loss_function(
+    epsilon_real: float,
+    epsilon_imag: float,
+) -> float:
+    """
+    Compute optical energy loss function:
+
+        Im(-1/epsilon)
+
+    """
+
+    denominator = (
+        epsilon_real ** 2 +
+        epsilon_imag ** 2
+    )
+
+    if denominator == 0:
+        return 0.0
+
+    return epsilon_imag / denominator

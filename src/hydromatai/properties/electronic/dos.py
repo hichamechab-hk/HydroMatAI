@@ -13,6 +13,22 @@ class DOSData:
     values: list[float]
     fermi_energy: float | None = None
 
+    def dos_at_fermi(self) -> float | None:
+        """Return the DOS value closest to the Fermi energy."""
+
+        if not self.energy or not self.values:
+            return None
+
+        if self.fermi_energy is None:
+            return None
+
+        index = min(
+            range(len(self.energy)),
+            key=lambda i: abs(self.energy[i] - self.fermi_energy),
+        )
+
+        return self.values[index]
+
 
 def read_fermi_energy(text: str) -> float | None:
     patterns = [

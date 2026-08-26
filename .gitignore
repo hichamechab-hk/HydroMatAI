@@ -42,3 +42,14 @@ tmp.pp
 # Generated Python bytecode
 __pycache__/
 *.py[cod]
+
+# Python generated files
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Development logs
+*.log
+
+# Development backups
+stage_*_backup_*/
