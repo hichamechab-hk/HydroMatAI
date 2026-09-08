@@ -77,3 +77,17 @@ tmp/
 # Résultats / fichiers temporaires Quantum Espresso
 *.save/
 *.UPF
+
+# ==================================================
+# Données / résultats locaux
+# ==================================================
+MOF_Library/
+structures/
+reports/
+
+# ==================================================
+# Quantum Espresso
+# ==================================================
+*.xml
+*.save/
+*.UPF
