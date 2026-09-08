@@ -91,3 +91,6 @@ reports/
 *.xml
 *.save/
 *.UPF
+
+# Scripts historiques locaux
+archive/scripts_historical/

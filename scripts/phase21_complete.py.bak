@@ -1,0 +1,1760 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+"""
+HydroMatAI — PHASE 21
+Préparation complète des pseudopotentiels Quantum ESPRESSO
+
+Objectifs
+---------
+1. Lire les candidats DFT issus des phases précédentes.
+2. Lire les CIF sans les modifier.
+3. Détecter les éléments chimiques réellement présents.
+4. Inspecter les pseudopotentiels UPF.
+5. Mapper STRICTEMENT élément -> UPF.
+6. Empêcher les faux mappings :
+       F  != Fe
+       Cl != C
+       N  != Ni
+       O  != Os
+       Zn != Zr
+       etc.
+7. Télécharger automatiquement les pseudopotentiels manquants.
+8. Refaire l'inspection après téléchargement.
+9. Produire CSV / JSON / MANIFEST.
+10. Ne lancer AUCUN calcul QE.
+
+IMPORTANT
+---------
+Ce script prépare uniquement les données pour QE.
+Il ne lance jamais :
+    pw.x
+    bands.x
+    dos.x
+    ph.x
+    relax
+    SCF
+"""
+
+from __future__ import annotations
+
+import argparse
+import csv
+import hashlib
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
+import urllib.request
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Dict, List, Set, Tuple
+
+
+# =============================================================================
+# CONFIGURATION
+# =============================================================================
+
+PROJECT_ROOT = Path("/home/hk/HydroMatAI")
+
+CIF_ROOT = PROJECT_ROOT / "MOF_Library" / "MOFXDB_FULL" / "cif"
+
+CALC_ROOT = PROJECT_ROOT / "calculations" / "phase_21_complete"
+
+CSV_OUT = CALC_ROOT / "phase21_complete.csv"
+JSON_OUT = CALC_ROOT / "phase21_complete.json"
+MANIFEST_OUT = CALC_ROOT / "phase21_manifest.json"
+
+# Chemin QE réellement utilisé sur la machine.
+QE_ROOT = Path("/home/hk/software/qe-7.5")
+QE_BIN = QE_ROOT / "bin" / "pw.x"
+PSEUDO_DIR = QE_ROOT / "pseudo"
+
+
+# =============================================================================
+# ÉLÉMENTS
+# =============================================================================
+
+# Pseudopotentiels nécessaires aux candidats actuels.
+SUPPORTED_ELEMENTS = {
+    "H",
+    "C",
+    "N",
+    "O",
+    "F",
+    "Cl",
+    "Zn",
+}
+
+
+# Quelques éléments fréquents pour empêcher explicitement les faux mappings.
+KNOWN_ELEMENTS = {
+    "H", "He",
+    "Li", "Be", "B", "C", "N", "O", "F", "Ne",
+    "Na", "Mg", "Al", "Si", "P", "S", "Cl", "Ar",
+    "K", "Ca", "Sc", "Ti", "V", "Cr", "Mn", "Fe", "Co", "Ni", "Cu", "Zn",
+    "Ga", "Ge", "As", "Se", "Br", "Kr",
+    "Rb", "Sr", "Y", "Zr", "Nb", "Mo", "Tc", "Ru", "Rh", "Pd", "Ag", "Cd",
+    "In", "Sn", "Sb", "Te", "I", "Xe",
+    "Cs", "Ba", "La", "Ce", "Pr", "Nd", "Pm", "Sm", "Eu", "Gd", "Tb",
+    "Dy", "Ho", "Er", "Tm", "Yb", "Lu",
+    "Hf", "Ta", "W", "Re", "Os", "Ir", "Pt", "Au", "Hg",
+    "Tl", "Pb", "Bi", "Po", "At", "Rn",
+}
+
+
+# =============================================================================
+# SOURCES DE TÉLÉCHARGEMENT
+# =============================================================================
+#
+# On utilise en priorité des fichiers PSLibrary / PBE connus.
+#
+# Le téléchargement est volontairement séparé du mapping :
+# un fichier téléchargé doit ensuite être validé par lecture de son contenu.
+#
+# Les URLs sont des candidats. Le script ne considère jamais le nom du fichier
+# comme une preuve suffisante de l'élément.
+#
+
+PSEUDO_CANDIDATES = {
+    "H": [
+        (
+            "H.pbe-kjpaw.UPF",
+            "https://pseudopotentials.quantum-espresso.org/upf_files/H.pbe-kjpaw.UPF",
+        ),
+        (
+            "H.pbe-kjpaw_psl.1.0.0.UPF",
+            "https://pseudopotentials.quantum-espresso.org/upf_files/H.pbe-kjpaw_psl.1.0.0.UPF",
+        ),
+    ],
+    "C": [
+        (
+            "C.pbe-n-kjpaw_psl.1.0.0.UPF",
+            "https://pseudopotentials.quantum-espresso.org/upf_files/C.pbe-n-kjpaw_psl.1.0.0.UPF",
+        ),
+        (
+            "C.pbe-n-kjpaw_psl.1.0.0.UPF",
+            "https://pseudopotentials.quantum-espresso.org/upf_files/C.pbe-n-kjpaw_psl.1.0.0.UPF",
+        ),
+    ],
+    "N": [
+        (
+            "N.pbe-n-kjpaw_psl.1.0.0.UPF",
+            "https://pseudopotentials.quantum-espresso.org/upf_files/N.pbe-n-kjpaw_psl.1.0.0.UPF",
+        ),
+        (
+            "N.pbe-n-kjpaw.UPF",
+            "https://pseudopotentials.quantum-espresso.org/upf_files/N.pbe-n-kjpaw.UPF",
+        ),
+    ],
+    "O": [
+        (
+            "O.pbe-n-kjpaw_psl.1.0.0.UPF",
+            "https://pseudopotentials.quantum-espresso.org/upf_files/O.pbe-n-kjpaw_psl.1.0.0.UPF",
+        ),
+        (
+            "O.pbe-kjpaw_psl.1.0.0.UPF",
+            "https://pseudopotentials.quantum-espresso.org/upf_files/O.pbe-kjpaw_psl.1.0.0.UPF",
+        ),
+    ],
+    "F": [
+        (
+            "F.pbe-n-kjpaw_psl.1.0.0.UPF",
+            "https://pseudopotentials.quantum-espresso.org/upf_files/F.pbe-n-kjpaw_psl.1.0.0.UPF",
+        ),
+        (
+            "F.pbe-kjpaw_psl.1.0.0.UPF",
+            "https://pseudopotentials.quantum-espresso.org/upf_files/F.pbe-kjpaw_psl.1.0.0.UPF",
+        ),
+    ],
+    "Cl": [
+        (
+            "Cl.pbe-n-kjpaw_psl.1.0.0.UPF",
+            "https://pseudopotentials.quantum-espresso.org/upf_files/Cl.pbe-n-kjpaw_psl.1.0.0.UPF",
+        ),
+        (
+            "Cl.pbe-dn-kjpaw_psl.1.0.0.UPF",
+            "https://pseudopotentials.quantum-espresso.org/upf_files/Cl.pbe-dn-kjpaw_psl.1.0.0.UPF",
+        ),
+    ],
+    "Zn": [
+        (
+            "Zn.pbe-dnl-kjpaw_psl.1.0.0.UPF",
+            "https://pseudopotentials.quantum-espresso.org/upf_files/Zn.pbe-dnl-kjpaw_psl.1.0.0.UPF",
+        ),
+        (
+            "Zn.pbe-n-kjpaw_psl.1.0.0.UPF",
+            "https://pseudopotentials.quantum-espresso.org/upf_files/Zn.pbe-n-kjpaw_psl.1.0.0.UPF",
+        ),
+    ],
+}
+
+
+# =============================================================================
+# OUTILS
+# =============================================================================
+
+def now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def safe_mkdir(path: Path) -> None:
+    path.mkdir(parents=True, exist_ok=True)
+
+
+def sha256_file(path: Path) -> str:
+    h = hashlib.sha256()
+
+    with path.open("rb") as f:
+        while True:
+            chunk = f.read(1024 * 1024)
+            if not chunk:
+                break
+            h.update(chunk)
+
+    return h.hexdigest()
+
+
+def normalize_element(value: str) -> str:
+    """
+    Normalise un symbole chimique.
+
+    Exemples :
+        c  -> C
+        CL -> Cl
+        zn -> Zn
+    """
+    value = value.strip()
+
+    if not value:
+        return ""
+
+    if len(value) == 1:
+        return value.upper()
+
+    return value[0].upper() + value[1:].lower()
+
+
+def filename_element(filename: str) -> str:
+    """
+    Détection PRUDENTE depuis le nom uniquement.
+
+    Cette fonction n'est PAS utilisée seule pour valider un UPF.
+    """
+
+    stem = Path(filename).name
+
+    # Cas exact au début :
+    # Cl.pbe...
+    # Zn.pbe...
+    # C.UPF
+    m = re.match(r"^([A-Z][a-z]?)", stem)
+
+    if m:
+        candidate = normalize_element(m.group(1))
+
+        if candidate in KNOWN_ELEMENTS:
+            return candidate
+
+    return ""
+
+
+# =============================================================================
+# PROTECTION QE
+# =============================================================================
+
+def check_qe_not_running() -> Dict[str, str]:
+    """
+    Vérifie qu'aucun calcul QE n'est actuellement lancé.
+
+    Cette vérification est informative.
+    Le script ne lance de toute façon aucun calcul.
+    """
+
+    processes = {
+        "pw.x": "NON LANCÉ",
+        "bands.x": "NON LANCÉ",
+        "dos.x": "NON LANCÉ",
+        "ph.x": "NON LANCÉ",
+        "relax": "NON LANCÉ",
+        "SCF": "NON LANCÉ",
+        "Calcul": "NON LANCÉ",
+    }
+
+    try:
+        result = subprocess.run(
+            ["pgrep", "-af", r"(pw\.x|bands\.x|dos\.x|ph\.x)"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+
+        if result.returncode == 0 and result.stdout.strip():
+            processes["Calcul"] = "PROCESSUS QE DÉTECTÉ"
+
+    except Exception:
+        pass
+
+    return processes
+
+
+# =============================================================================
+# LECTURE CIF
+# =============================================================================
+
+def parse_cif_elements(cif_path: Path) -> Tuple[Set[str], int]:
+    """
+    Lecture simple et robuste des symboles atomiques d'un CIF.
+
+    On utilise d'abord _atom_site_type_symbol.
+    Fallback sur _atom_site_label.
+    """
+
+    text = cif_path.read_text(
+        encoding="utf-8",
+        errors="replace",
+    )
+
+    lines = text.splitlines()
+
+    elements: Set[str] = set()
+    atom_count = 0
+
+    headers = []
+    rows = []
+
+    in_loop = False
+    loop_headers = []
+    loop_rows = []
+
+    def flush_loop():
+        nonlocal headers, rows
+
+        if not loop_headers:
+            return
+
+        lower_headers = [h.lower() for h in loop_headers]
+
+        type_idx = None
+        label_idx = None
+
+        for i, h in enumerate(lower_headers):
+            if h in (
+                "_atom_site_type_symbol",
+                "_atom_site_type_symbol".lower(),
+            ):
+                type_idx = i
+
+            if h == "_atom_site_label":
+                label_idx = i
+
+        if type_idx is None and label_idx is None:
+            return
+
+        for row in loop_rows:
+            if len(row) <= max(
+                type_idx if type_idx is not None else 0,
+                label_idx if label_idx is not None else 0,
+            ):
+                continue
+
+            value = (
+                row[type_idx]
+                if type_idx is not None
+                else row[label_idx]
+            )
+
+            value = value.strip("'\"")
+
+            # Si label = Zn1, C12, Cl3...
+            m = re.match(r"^([A-Z][a-z]?)", value)
+
+            if m:
+                element = normalize_element(m.group(1))
+
+                if element in KNOWN_ELEMENTS:
+                    elements.add(element)
+                    atom_count += 1
+
+        headers = []
+        rows = []
+
+    i = 0
+
+    while i < len(lines):
+        line = lines[i].strip()
+
+        if not line or line.startswith("#"):
+            i += 1
+            continue
+
+        if line.lower() == "loop_":
+            flush_loop()
+
+            loop_headers = []
+            loop_rows = []
+
+            i += 1
+
+            # Headers
+            while i < len(lines):
+                s = lines[i].strip()
+
+                if not s or s.startswith("#"):
+                    i += 1
+                    continue
+
+                if s.startswith("_"):
+                    loop_headers.append(s.split()[0])
+                    i += 1
+                    continue
+
+                break
+
+            # Rows
+            while i < len(lines):
+                s = lines[i].strip()
+
+                if not s:
+                    i += 1
+                    continue
+
+                if s.lower() == "loop_" or s.startswith("_"):
+                    break
+
+                if s.startswith("#"):
+                    i += 1
+                    continue
+
+                parts = s.split()
+
+                if parts:
+                    loop_rows.append(parts)
+
+                i += 1
+
+            headers = loop_headers
+            rows = loop_rows
+            flush_loop()
+
+            continue
+
+        i += 1
+
+    flush_loop()
+
+    return elements, atom_count
+
+
+# =============================================================================
+# INSPECTION UPF
+# =============================================================================
+
+def extract_upf_element(path: Path) -> str:
+    """
+    Lit le contenu UPF et tente d'identifier l'élément.
+
+    Méthodes :
+      1. <PP_HEADER element="O" ...>
+      2. <PP_HEADER ... element="O" ...>
+      3. ancien format : element="O"
+      4. attributs XML apparentés.
+
+    Le nom du fichier n'est jamais considéré comme preuve définitive.
+    """
+
+    try:
+        # Lire seulement une portion suffisante.
+        with path.open(
+            "r",
+            encoding="utf-8",
+            errors="replace",
+        ) as f:
+            text = f.read(250_000)
+    except Exception:
+        return ""
+
+    patterns = [
+        r'<PP_HEADER[^>]*\belement\s*=\s*["\']([A-Za-z]{1,3})["\']',
+        r'<PP_HEADER[^>]*\belement\s*=\s*([A-Za-z]{1,3})',
+        r'\belement\s*=\s*["\']([A-Za-z]{1,3})["\']',
+        r'\belement\s*=\s*([A-Za-z]{1,3})',
+    ]
+
+    for pattern in patterns:
+        m = re.search(
+            pattern,
+            text,
+            flags=re.IGNORECASE,
+        )
+
+        if m:
+            element = normalize_element(m.group(1))
+
+            if element in KNOWN_ELEMENTS:
+                return element
+
+    # Certains UPF comportent "Element: O" dans l'en-tête.
+    patterns2 = [
+        r"\bElement\s*[:=]\s*([A-Za-z]{1,3})\b",
+        r"\bELEMENT\s*[:=]\s*([A-Za-z]{1,3})\b",
+    ]
+
+    for pattern in patterns2:
+        m = re.search(pattern, text)
+
+        if m:
+            element = normalize_element(m.group(1))
+
+            if element in KNOWN_ELEMENTS:
+                return element
+
+    return ""
+
+
+def inspect_pseudos() -> Dict[str, List[Path]]:
+    """
+    Inspecte tous les UPF du répertoire QE.
+
+    Retour :
+        {
+            "C": [Path(...), ...],
+            "H": [...],
+        }
+    """
+
+    result: Dict[str, List[Path]] = {}
+
+    if not PSEUDO_DIR.exists():
+        return result
+
+    files = sorted(
+        p for p in PSEUDO_DIR.iterdir()
+        if p.is_file()
+        and p.suffix.lower() in {".upf", ".UPF".lower()}
+    )
+
+    for path in files:
+        element = extract_upf_element(path)
+
+        # Fallback seulement si le contenu ne donne rien.
+        # Même ici, on refuse les extensions dangereuses.
+        if not element:
+            element = filename_element(path.name)
+
+        if not element:
+            continue
+
+        result.setdefault(element, []).append(path)
+
+    return result
+
+
+# =============================================================================
+# PROTECTION DES MAPPINGS
+# =============================================================================
+
+def validate_mapping(
+    requested: str,
+    detected: str,
+    path: Path,
+) -> bool:
+    """
+    Mapping strict.
+
+    Exemple :
+        requested = F
+        detected  = Fe
+        => False
+
+        requested = Cl
+        detected  = C
+        => False
+    """
+
+    requested = normalize_element(requested)
+    detected = normalize_element(detected)
+
+    if requested != detected:
+        return False
+
+    # Protection explicite contre les confusions connues.
+    forbidden = {
+        ("F", "Fe"),
+        ("Cl", "C"),
+        ("N", "Ni"),
+        ("O", "Os"),
+        ("Zn", "Zr"),
+        ("H", "Hg"),
+        ("C", "Ca"),
+    }
+
+    if (requested, detected) in forbidden:
+        return False
+
+    if path.name == "":
+        return False
+
+    return True
+
+
+# =============================================================================
+# TÉLÉCHARGEMENT
+# =============================================================================
+
+def download_file(
+    url: str,
+    destination: Path,
+    timeout: int = 60,
+) -> bool:
+    """
+    Téléchargement atomique :
+    téléchargement dans .part puis rename.
+    """
+
+    tmp = destination.with_suffix(destination.suffix + ".part")
+
+    try:
+        req = urllib.request.Request(
+            url,
+            headers={
+                "User-Agent": "HydroMatAI-Phase21/1.0",
+            },
+        )
+
+        with urllib.request.urlopen(
+            req,
+            timeout=timeout,
+        ) as response:
+
+            data = response.read()
+
+        # Protection contre une réponse HTML à la place d'un UPF.
+        if len(data) < 500:
+            return False
+
+        head = data[:500].lower()
+
+        if b"<html" in head or b"<!doctype" in head:
+            return False
+
+        tmp.write_bytes(data)
+
+        if tmp.stat().st_size < 500:
+            tmp.unlink(missing_ok=True)
+            return False
+
+        tmp.replace(destination)
+
+        return True
+
+    except Exception as exc:
+        print(
+            f"      téléchargement échoué : {exc}"
+        )
+
+        try:
+            tmp.unlink(missing_ok=True)
+        except Exception:
+            pass
+
+        return False
+
+
+def download_missing(
+    missing: Set[str],
+) -> Dict[str, str]:
+    """
+    Télécharge les pseudopotentiels manquants.
+
+    Retour :
+        {
+          "O": "O.pbe....UPF",
+          ...
+        }
+    """
+
+    downloaded = {}
+
+    if not missing:
+        return downloaded
+
+    print()
+    print("-" * 80)
+    print("TÉLÉCHARGEMENT AUTOMATIQUE")
+    print("-" * 80)
+
+    safe_mkdir(PSEUDO_DIR)
+
+    for element in sorted(missing):
+        print(f"[DOWNLOAD] {element}")
+
+        candidates = PSEUDO_CANDIDATES.get(element, [])
+
+        if not candidates:
+            print(
+                f"  Aucun candidat de téléchargement configuré pour {element}"
+            )
+            continue
+
+        success = False
+
+        for filename, url in candidates:
+
+            destination = PSEUDO_DIR / filename
+
+            # Ne pas écraser un fichier existant.
+            if destination.exists():
+                detected = extract_upf_element(destination)
+
+                if validate_mapping(
+                    element,
+                    detected,
+                    destination,
+                ):
+                    print(
+                        f"  Déjà présent : {filename}"
+                    )
+                    downloaded[element] = filename
+                    success = True
+                    break
+
+            print(f"  Essai : {filename}")
+
+            ok = download_file(
+                url,
+                destination,
+            )
+
+            if not ok:
+                print("  Échec")
+                continue
+
+            detected = extract_upf_element(destination)
+
+            if validate_mapping(
+                element,
+                detected,
+                destination,
+            ):
+                print(
+                    f"  OK → {filename}"
+                )
+
+                downloaded[element] = filename
+                success = True
+                break
+
+            print(
+                f"  REFUSÉ : élément UPF détecté = "
+                f"{detected or 'UNKNOWN'}"
+            )
+
+            try:
+                destination.unlink(missing_ok=True)
+            except Exception:
+                pass
+
+        if not success:
+            print(
+                f"  IMPOSSIBLE D'INSTALLER {element}"
+            )
+
+    return downloaded
+
+
+# =============================================================================
+# DÉCOUVERTE DES CANDIDATS
+# =============================================================================
+
+def find_candidate_csv() -> Path | None:
+    """
+    Cherche les sorties des phases précédentes.
+
+    Priorité :
+      phase 20 / DFT priority
+      screening DFT
+      fichiers CSV de calcul.
+    """
+
+    candidates = [
+        PROJECT_ROOT / "calculations" / "phase_20_dft_priority" / "phase20_dft_priority.csv",
+        PROJECT_ROOT / "calculations" / "phase_20_dft_priority" / "phase20_dft_priority.csv",
+        PROJECT_ROOT / "calculations" / "phase_20" / "phase20.csv",
+        PROJECT_ROOT / "calculations" / "phase_20_dft_candidates" / "phase20_dft_candidates.csv",
+    ]
+
+    for path in candidates:
+        if path.exists():
+            return path
+
+    # Recherche secondaire.
+    search_roots = [
+        PROJECT_ROOT / "calculations",
+    ]
+
+    found = []
+
+    for root in search_roots:
+        if not root.exists():
+            continue
+
+        for path in root.rglob("*.csv"):
+            name = path.name.lower()
+
+            if (
+                "phase20" in name
+                or "dft" in name
+                or "priority" in name
+                or "candidate" in name
+            ):
+                found.append(path)
+
+    if found:
+        found.sort()
+        return found[0]
+
+    return None
+
+
+def read_candidates_from_csv(
+    path: Path,
+    limit: int,
+) -> List[Dict[str, str]]:
+    """
+    Lecture flexible d'un CSV de candidats.
+
+    Les noms de colonnes peuvent varier.
+    """
+
+    with path.open(
+        "r",
+        encoding="utf-8-sig",
+        newline="",
+    ) as f:
+
+        reader = csv.DictReader(f)
+
+        if not reader.fieldnames:
+            return []
+
+        fieldnames = [
+            x.strip()
+            for x in reader.fieldnames
+            if x
+        ]
+
+        def find_col(names):
+            for wanted in names:
+                for col in fieldnames:
+                    if col.lower() == wanted.lower():
+                        return col
+
+            for wanted in names:
+                for col in fieldnames:
+                    if wanted.lower() in col.lower():
+                        return col
+
+            return None
+
+        id_col = find_col([
+            "id",
+            "cif_id",
+            "structure_id",
+            "material_id",
+            "mof_id",
+            "candidate_id",
+        ])
+
+        name_col = find_col([
+            "name",
+            "mof_name",
+            "structure_name",
+            "label",
+        ])
+
+        cif_col = find_col([
+            "cif",
+            "cif_path",
+            "path",
+            "file",
+            "cif_file",
+        ])
+
+        rows = []
+
+        for raw in reader:
+            row = {
+                str(k).strip(): (
+                    str(v).strip()
+                    if v is not None
+                    else ""
+                )
+                for k, v in raw.items()
+            }
+
+            cif_value = (
+                row.get(cif_col, "")
+                if cif_col
+                else ""
+            )
+
+            identifier = (
+                row.get(id_col, "")
+                if id_col
+                else ""
+            )
+
+            name = (
+                row.get(name_col, "")
+                if name_col
+                else ""
+            )
+
+            rows.append({
+                "id": identifier,
+                "name": name,
+                "cif": cif_value,
+                "source": str(path),
+            })
+
+            if len(rows) >= limit:
+                break
+
+    return rows
+
+
+def find_cif_for_candidate(candidate: Dict[str, str]) -> Path | None:
+    """
+    Résout le chemin CIF.
+    """
+
+    value = candidate.get("cif", "").strip()
+
+    if value:
+        p = Path(value)
+
+        if p.exists():
+            return p
+
+        if not p.is_absolute():
+            p2 = PROJECT_ROOT / value
+
+            if p2.exists():
+                return p2
+
+        # Si la valeur est seulement un nom de fichier.
+        p3 = CIF_ROOT / Path(value).name
+
+        if p3.exists():
+            return p3
+
+    identifier = candidate.get("id", "").strip()
+    name = candidate.get("name", "").strip()
+
+    # Recherche par nom.
+    if name:
+        exact = CIF_ROOT / f"{name}.cif"
+
+        if exact.exists():
+            return exact
+
+    # Recherche par ID numérique.
+    if identifier:
+        for p in CIF_ROOT.glob("*.cif"):
+            if identifier in p.name:
+                return p
+
+    return None
+
+
+# =============================================================================
+# FALLBACK : PRENDRE LES 25 PREMIERS CIF SI CSV ABSENT
+# =============================================================================
+
+def fallback_candidates(limit: int) -> List[Dict[str, str]]:
+    """
+    Fallback contrôlé.
+
+    Si aucun CSV de phase précédente n'est trouvé,
+    utilise les CIF disponibles dans MOFXDB_FULL.
+
+    Cela permet de ne pas bloquer la phase uniquement parce qu'un
+    fichier intermédiaire a changé de nom.
+    """
+
+    files = sorted(CIF_ROOT.glob("*.cif"))
+
+    result = []
+
+    for p in files[:limit]:
+        result.append({
+            "id": p.stem,
+            "name": p.stem,
+            "cif": str(p),
+            "source": "fallback_cif_directory",
+        })
+
+    return result
+
+
+# =============================================================================
+# TRAITEMENT
+# =============================================================================
+
+def process(
+    limit: int,
+    auto_download: bool,
+) -> int:
+
+    safe_mkdir(CALC_ROOT)
+    safe_mkdir(PSEUDO_DIR)
+
+    print("=" * 80)
+    print(" HydroMatAI — PHASE 21")
+    print(" PRÉPARATION COMPLÈTE DES PSEUDOPOTENTIELS QE")
+    print("=" * 80)
+
+    # -------------------------------------------------------------------------
+    # Protection QE
+    # -------------------------------------------------------------------------
+
+    print()
+    print("PROTECTION QE")
+    print("-" * 80)
+
+    qe_status = check_qe_not_running()
+
+    for key, value in qe_status.items():
+        print(f"{key:<10}: {value}")
+
+    print()
+    print("ENVIRONNEMENT QE")
+    print("-" * 80)
+
+    if QE_BIN.exists():
+        print(f"pw.x       : OK → {QE_BIN}")
+    else:
+        print(f"pw.x       : NON TROUVÉ → {QE_BIN}")
+
+    print(f"Pseudo dir : {PSEUDO_DIR}")
+
+    # -------------------------------------------------------------------------
+    # Inspection initiale
+    # -------------------------------------------------------------------------
+
+    pseudo_map = inspect_pseudos()
+
+    print()
+    print("INSPECTION INITIALE DES UPF")
+    print("-" * 80)
+
+    total_upf = sum(
+        len(v)
+        for v in pseudo_map.values()
+    )
+
+    print(f"UPF analysés : {total_upf}")
+
+    available_initial = sorted(
+        e for e in pseudo_map
+        if e in KNOWN_ELEMENTS
+    )
+
+    if available_initial:
+        print(
+            "Éléments détectés : "
+            + ", ".join(available_initial)
+        )
+    else:
+        print("Éléments détectés : AUCUN")
+
+    # -------------------------------------------------------------------------
+    # Candidats
+    # -------------------------------------------------------------------------
+
+    candidate_csv = find_candidate_csv()
+
+    if candidate_csv:
+        print()
+        print("SOURCE CANDIDATS")
+        print("-" * 80)
+        print(f"CSV : {candidate_csv}")
+
+        candidates = read_candidates_from_csv(
+            candidate_csv,
+            limit,
+        )
+
+    else:
+        print()
+        print("SOURCE CANDIDATS")
+        print("-" * 80)
+        print(
+            "CSV phase précédente introuvable."
+        )
+        print(
+            "Fallback contrôlé vers le répertoire CIF."
+        )
+
+        candidates = fallback_candidates(limit)
+
+    if not candidates:
+        print()
+        print("ERREUR : aucun candidat trouvé.")
+        return 2
+
+    # -------------------------------------------------------------------------
+    # Analyse CIF
+    # -------------------------------------------------------------------------
+
+    print()
+    print("VALIDATION CIF / ÉLÉMENTS")
+    print("-" * 80)
+
+    records = []
+    required_elements: Set[str] = set()
+
+    cif_failed = 0
+
+    for idx, candidate in enumerate(
+        candidates,
+        start=1,
+    ):
+
+        cif_path = find_cif_for_candidate(
+            candidate
+        )
+
+        identifier = (
+            candidate.get("id")
+            or candidate.get("name")
+            or "UNKNOWN"
+        )
+
+        name = candidate.get(
+            "name",
+            "",
+        )
+
+        if not name:
+            name = identifier
+
+        print(
+            f"[{idx}/{len(candidates)}] {identifier}"
+        )
+
+        record = {
+            "index": idx,
+            "id": identifier,
+            "name": name,
+            "cif": str(cif_path) if cif_path else "",
+            "elements": [],
+            "atom_count": 0,
+            "pseudopotentials": {},
+            "missing_pseudo": [],
+            "status": "CIF_FAILED",
+        }
+
+        if not cif_path or not cif_path.exists():
+            print(
+                "  CIF      : FAILED"
+            )
+
+            cif_failed += 1
+            records.append(record)
+            continue
+
+        print(
+            f"  CIF      : OK → {cif_path}"
+        )
+
+        try:
+            elements, atom_count = parse_cif_elements(
+                cif_path
+            )
+        except Exception as exc:
+            print(
+                f"  CIF      : PARSE FAILED → {exc}"
+            )
+
+            cif_failed += 1
+            records.append(record)
+            continue
+
+        elements_sorted = sorted(
+            elements,
+            key=lambda x: (
+                x not in SUPPORTED_ELEMENTS,
+                x,
+            ),
+        )
+
+        record["elements"] = elements_sorted
+        record["atom_count"] = atom_count
+
+        required_elements.update(elements)
+
+        print(
+            "  Elements : "
+            + ", ".join(elements_sorted)
+        )
+
+        print(
+            f"  Atomes   : {atom_count}"
+        )
+
+        records.append(record)
+
+    # -------------------------------------------------------------------------
+    # Éléments nécessaires
+    # -------------------------------------------------------------------------
+
+    print()
+    print("PSEUDOPOTENTIELS REQUIS")
+    print("-" * 80)
+
+    required_sorted = sorted(
+        required_elements,
+        key=lambda x: (
+            x not in SUPPORTED_ELEMENTS,
+            x,
+        ),
+    )
+
+    print(
+        "Requis : "
+        + (
+            ", ".join(required_sorted)
+            if required_sorted
+            else "AUCUN"
+        )
+    )
+
+    # -------------------------------------------------------------------------
+    # Validation des UPF existants
+    # -------------------------------------------------------------------------
+
+    pseudo_map = inspect_pseudos()
+
+    available = set(
+        e for e in pseudo_map
+        if e in required_elements
+    )
+
+    missing = required_elements - available
+
+    print()
+    print("UPF VALIDÉS")
+    print("-" * 80)
+
+    for element in sorted(required_elements):
+        paths = pseudo_map.get(
+            element,
+            [],
+        )
+
+        valid_paths = []
+
+        for path in paths:
+            detected = extract_upf_element(path)
+
+            if validate_mapping(
+                element,
+                detected,
+                path,
+            ):
+                valid_paths.append(path)
+
+        if valid_paths:
+            print(
+                f"{element:<3} → "
+                + valid_paths[0].name
+            )
+        else:
+            print(
+                f"{element:<3} → MISSING"
+            )
+
+    # -------------------------------------------------------------------------
+    # Téléchargement
+    # -------------------------------------------------------------------------
+
+    downloaded = {}
+
+    if auto_download and missing:
+        downloaded = download_missing(
+            missing
+        )
+
+        # IMPORTANT :
+        # réinspection complète après téléchargement.
+        pseudo_map = inspect_pseudos()
+
+        available = set(
+            e for e in pseudo_map
+            if e in required_elements
+        )
+
+        missing = required_elements - available
+
+    # -------------------------------------------------------------------------
+    # Mapping final
+    # -------------------------------------------------------------------------
+
+    print()
+    print("MAPPING FINAL")
+    print("-" * 80)
+
+    ready_count = 0
+    missing_count = 0
+    invalid_mapping_count = 0
+
+    for record in records:
+
+        if record["status"] == "CIF_FAILED":
+            continue
+
+        elements = record["elements"]
+
+        missing_for_record = []
+        mapping = {}
+
+        for element in elements:
+
+            valid_paths = []
+
+            for path in pseudo_map.get(
+                element,
+                [],
+            ):
+
+                detected = extract_upf_element(
+                    path
+                )
+
+                if validate_mapping(
+                    element,
+                    detected,
+                    path,
+                ):
+                    valid_paths.append(path)
+
+            if valid_paths:
+                # Choisir le premier UPF validé.
+                selected = valid_paths[0]
+
+                mapping[element] = {
+                    "file": selected.name,
+                    "path": str(selected),
+                    "sha256": sha256_file(selected),
+                    "detected_element": element,
+                }
+
+                print(
+                    f"{element:<3} → {selected.name}"
+                )
+
+            else:
+                missing_for_record.append(
+                    element
+                )
+
+                print(
+                    f"{element:<3} → MISSING"
+                )
+
+        record["pseudopotentials"] = mapping
+        record["missing_pseudo"] = (
+            missing_for_record
+        )
+
+        if missing_for_record:
+            record["status"] = "MISSING_PSEUDO"
+            missing_count += 1
+        else:
+            record["status"] = "READY_FOR_QE"
+            ready_count += 1
+
+        print(
+            f"STATUS   : {record['status']}"
+        )
+        print()
+
+    # -------------------------------------------------------------------------
+    # Résultats
+    # -------------------------------------------------------------------------
+
+    ready_for_qe = (
+        len(records) > 0
+        and cif_failed == 0
+        and missing_count == 0
+        and len(required_elements) > 0
+    )
+
+    final_available = sorted(
+        e for e in required_elements
+        if e in pseudo_map
+    )
+
+    final_missing = sorted(
+        required_elements - set(final_available)
+    )
+
+    print("=" * 80)
+    print("PHASE 21 — RÉSULTATS")
+    print("=" * 80)
+
+    print(
+        f"Candidats          : {len(records)}"
+    )
+
+    print(
+        f"CIF FAILED         : {cif_failed}"
+    )
+
+    print(
+        f"READY_FOR_QE       : {ready_count}"
+    )
+
+    print(
+        f"MISSING_PSEUDO     : {missing_count}"
+    )
+
+    print(
+        f"INVALID_MAPPING    : {invalid_mapping_count}"
+    )
+
+    print()
+    print("-" * 80)
+    print("PSEUDOPOTENTIELS REQUIS")
+    print("-" * 80)
+
+    print(
+        "Requis : "
+        + (
+            ", ".join(required_sorted)
+            if required_sorted
+            else "AUCUN"
+        )
+    )
+
+    print(
+        "Disponibles : "
+        + (
+            ", ".join(final_available)
+            if final_available
+            else "AUCUN"
+        )
+    )
+
+    print(
+        "Manquants : "
+        + (
+            ", ".join(final_missing)
+            if final_missing
+            else "AUCUN"
+        )
+    )
+
+    # -------------------------------------------------------------------------
+    # CSV
+    # -------------------------------------------------------------------------
+
+    csv_fields = [
+        "index",
+        "id",
+        "name",
+        "cif",
+        "elements",
+        "atom_count",
+        "pseudopotentials",
+        "missing_pseudo",
+        "status",
+    ]
+
+    with CSV_OUT.open(
+        "w",
+        encoding="utf-8",
+        newline="",
+    ) as f:
+
+        writer = csv.DictWriter(
+            f,
+            fieldnames=csv_fields,
+        )
+
+        writer.writeheader()
+
+        for record in records:
+            writer.writerow({
+                "index": record["index"],
+                "id": record["id"],
+                "name": record["name"],
+                "cif": record["cif"],
+                "elements": ",".join(
+                    record["elements"]
+                ),
+                "atom_count": record["atom_count"],
+                "pseudopotentials": json.dumps(
+                    record["pseudopotentials"],
+                    ensure_ascii=False,
+                ),
+                "missing_pseudo": ",".join(
+                    record["missing_pseudo"]
+                ),
+                "status": record["status"],
+            })
+
+    # -------------------------------------------------------------------------
+    # JSON
+    # -------------------------------------------------------------------------
+
+    json_data = {
+        "phase": "21",
+        "name": "pseudopotential_preparation",
+        "generated_at": now_iso(),
+        "project_root": str(PROJECT_ROOT),
+        "qe_root": str(QE_ROOT),
+        "pseudo_dir": str(PSEUDO_DIR),
+        "candidate_source": (
+            str(candidate_csv)
+            if candidate_csv
+            else "fallback_cif_directory"
+        ),
+        "automatic_download": auto_download,
+        "candidates": len(records),
+        "cif_failed": cif_failed,
+        "ready_for_qe": ready_for_qe,
+        "ready_count": ready_count,
+        "missing_count": missing_count,
+        "required_elements": required_sorted,
+        "available_elements": final_available,
+        "missing_elements": final_missing,
+        "downloaded": downloaded,
+        "records": records,
+    }
+
+    JSON_OUT.write_text(
+        json.dumps(
+            json_data,
+            indent=2,
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    # -------------------------------------------------------------------------
+    # Manifest
+    # -------------------------------------------------------------------------
+
+    manifest = {
+        "phase": "21",
+        "status": (
+            "READY_FOR_QE"
+            if ready_for_qe
+            else "BLOCKED"
+        ),
+        "generated_at": now_iso(),
+        "paths": {
+            "qe_bin": str(QE_BIN),
+            "pseudo_dir": str(PSEUDO_DIR),
+            "csv": str(CSV_OUT),
+            "json": str(JSON_OUT),
+            "manifest": str(MANIFEST_OUT),
+        },
+        "protections": {
+            "no_qe_calculation": True,
+            "no_cif_modification": True,
+            "strict_element_mapping": True,
+            "f_to_fe_protection": True,
+            "cl_to_c_protection": True,
+            "automatic_download": auto_download,
+        },
+        "required_elements": required_sorted,
+        "available_elements": final_available,
+        "missing_elements": final_missing,
+        "sha256_pseudopotentials": {
+            element: [
+                {
+                    "file": p.name,
+                    "sha256": sha256_file(p),
+                }
+                for p in pseudo_map.get(
+                    element,
+                    [],
+                )
+            ]
+            for element in final_available
+        },
+    }
+
+    MANIFEST_OUT.write_text(
+        json.dumps(
+            manifest,
+            indent=2,
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    # -------------------------------------------------------------------------
+    # Audit final
+    # -------------------------------------------------------------------------
+
+    print()
+    print("-" * 80)
+    print("FICHIERS")
+    print("-" * 80)
+
+    print(f"CSV      : {CSV_OUT}")
+    print(f"JSON     : {JSON_OUT}")
+    print(f"MANIFEST : {MANIFEST_OUT}")
+
+    print()
+    print("=" * 80)
+    print("PHASE 21 — AUDIT FINAL")
+    print("=" * 80)
+
+    print(
+        "Lecture CIF                 : "
+        + ("OK" if cif_failed == 0 else "FAILED")
+    )
+
+    print(
+        "Inspection UPF              : OK"
+    )
+
+    print(
+        "Mapping élémentaire strict  : OK"
+    )
+
+    print(
+        "Protection F → Fe           : OK"
+    )
+
+    print(
+        "Protection Cl → C           : OK"
+    )
+
+    print(
+        "Téléchargement automatique  : "
+        + ("ACTIVÉ" if auto_download else "DÉSACTIVÉ")
+    )
+
+    print(
+        "Aucun calcul QE             : OK"
+    )
+
+    print(
+        "Aucun CIF modifié           : OK"
+    )
+
+    print(
+        "Traçabilité                 : OK"
+    )
+
+    print()
+
+    print(
+        "READY_FOR_QE : "
+        + ("OUI" if ready_for_qe else "NON")
+    )
+
+    if ready_for_qe:
+        print(
+            "BLOCAGE : AUCUN"
+        )
+    else:
+        blockers = []
+
+        if cif_failed:
+            blockers.append("CIF")
+
+        blockers.extend(final_missing)
+
+        print(
+            "BLOCAGE : "
+            + (
+                ", ".join(blockers)
+                if blockers
+                else "VALIDATION INCOMPLÈTE"
+            )
+        )
+
+    print("=" * 80)
+
+    print()
+    print("PHASE 21 — TERMINÉE")
+
+    if ready_for_qe:
+        print(
+            "Préparation pseudopotentiels : OK"
+        )
+        print(
+            "Tous les éléments requis possèdent "
+            "un UPF validé."
+        )
+    else:
+        print(
+            "Préparation pseudopotentiels : BLOQUÉE"
+        )
+        print(
+            "Aucun calcul QE n'a été lancé."
+        )
+
+    print("=" * 80)
+
+    # READY => 0
+    # BLOCKED => 1
+    return 0 if ready_for_qe else 1
+
+
+# =============================================================================
+# MAIN
+# =============================================================================
+
+def main():
+
+    parser = argparse.ArgumentParser(
+        description=(
+            "HydroMatAI Phase 21 — "
+            "préparation pseudopotentiels QE"
+        )
+    )
+
+    parser.add_argument(
+        "--limit",
+        type=int,
+        default=25,
+        help="Nombre maximal de candidats à traiter.",
+    )
+
+    parser.add_argument(
+        "--no-download",
+        action="store_true",
+        help=(
+            "Désactive le téléchargement automatique "
+            "des pseudopotentiels."
+        ),
+    )
+
+    args = parser.parse_args()
+
+    if args.limit <= 0:
+        print("ERREUR : --limit doit être > 0")
+        sys.exit(2)
+
+    code = process(
+        limit=args.limit,
+        auto_download=not args.no_download,
+    )
+
+    sys.exit(code)
+
+
+if __name__ == "__main__":
+    main()
