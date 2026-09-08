@@ -1,10 +1,10 @@
+from __future__ import annotations
 """Global HydroMatAI platform workflow.
 
 This module connects the main scientific engines without launching
 real DFT calculations automatically.
 """
 
-from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Any
@@ -92,6 +92,86 @@ class PlatformWorkflow:
         result.electronic = electronic
         result.optical = optical
         result.scientific = scientific
+
+        # ============================================================
+        # DFT
+        # ============================================================
+        #
+        # dry_run=True  : validation uniquement, aucun calcul.
+        # dry_run=False : exécution du moteur DFT fourni.
+        #
+        # Le workflow accepte volontairement plusieurs interfaces :
+        #   - DFTPipeline / backend avec validate() + run()
+        #   - objets DFT plus simples exposant directement run()
+        #
+        if dft is not None:
+
+            try:
+
+                if self.dry_run:
+
+                    validate = getattr(
+                        dft,
+                        "validate",
+                        None,
+                    )
+
+                    if callable(validate):
+
+                        validation = validate()
+
+                        if not getattr(
+                            validation,
+                            "success",
+                            False,
+                        ):
+                            result.success = False
+
+                else:
+
+                    run = getattr(
+                        dft,
+                        "run",
+                        None,
+                    )
+
+                    if not callable(run):
+                        raise AttributeError(
+                            "DFT object has no run() method."
+                        )
+
+                    dft_result = run()
+
+                    # Conserver le résultat d'exécution dans result.dft.
+                    result.dft = dft_result
+
+                    if hasattr(
+                        dft_result,
+                        "success",
+                    ):
+                        result.success = bool(
+                            dft_result.success
+                        )
+
+            except Exception as exc:
+
+                result.success = False
+
+                # Conserver l'objet DFT original pour faciliter
+                # le diagnostic sans imposer une nouvelle API.
+                result.dft = dft
+
+                if hasattr(
+                    result,
+                    "error_type",
+                ):
+                    result.error_type = "DFT"
+
+                if hasattr(
+                    result,
+                    "error_message",
+                ):
+                    result.error_message = str(exc)
 
         result.stages_completed.extend(
             [

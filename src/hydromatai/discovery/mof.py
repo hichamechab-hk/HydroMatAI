@@ -1,6 +1,6 @@
+from __future__ import annotations
 """Adapters between MOFX-DB records and HydroMatAI candidates."""
 
-from __future__ import annotations
 
 from .candidate import MOFCandidate
 from .database import MOFRecord

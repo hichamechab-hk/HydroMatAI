@@ -1,13 +1,14 @@
+from __future__ import annotations
 """Scientific analysis result."""
 
-from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+
+from hydromatai.literature import LiteratureResult, HydrogenStorageScore
 
 
 @dataclass
 class ScientificResult:
-
     material: str
 
     total_energy: float | None = None
@@ -25,3 +26,12 @@ class ScientificResult:
     final_score: float = 0.0
 
     summary: str = ""
+
+    literature_results: list[LiteratureResult] = field(default_factory=list)
+
+    hydrogen_literature_score: HydrogenStorageScore | None = None
+
+    @property
+    def literature_count(self) -> int:
+        """Number of published results attached to this analysis."""
+        return len(self.literature_results)

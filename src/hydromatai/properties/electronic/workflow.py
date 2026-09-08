@@ -1,6 +1,6 @@
+from __future__ import annotations
 """High-level electronic-property workflow."""
 
-from __future__ import annotations
 
 from pathlib import Path
 

@@ -1,6 +1,6 @@
+from __future__ import annotations
 """Density of States utilities for Quantum ESPRESSO outputs."""
 
-from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path

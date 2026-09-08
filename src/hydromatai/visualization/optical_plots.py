@@ -1,6 +1,6 @@
+from __future__ import annotations
 """Automatic optical-property plots."""
 
-from __future__ import annotations
 
 from pathlib import Path
 

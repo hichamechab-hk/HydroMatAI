@@ -39,10 +39,10 @@ class QEParser:
     )
 
     FORCE_PATTERN = re.compile(
-        rf"force\s+=\s+\(\s*"
+        rf"force\s+=\s*"
         rf"({FLOAT})\s+"
         rf"({FLOAT})\s+"
-        rf"({FLOAT})\s*\)"
+        rf"({FLOAT})"
     )
 
     def _to_float(self, value: str) -> float:

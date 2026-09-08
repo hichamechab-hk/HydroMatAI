@@ -1,3 +1,13 @@
-from .calculator import QuantumEspressoCalculator
+"""Quantum ESPRESSO backend."""
 
-__all__ = ["QuantumEspressoCalculator"]
+from .backend import QuantumEspressoBackend
+from .calculator import QuantumEspressoCalculator
+from .input_generator import QEInputGenerator
+from .parser import QEParser
+
+__all__ = [
+    "QuantumEspressoBackend",
+    "QuantumEspressoCalculator",
+    "QEInputGenerator",
+    "QEParser",
+]

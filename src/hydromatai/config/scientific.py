@@ -1,10 +1,10 @@
+from __future__ import annotations
 """Central scientific configuration for HydroMatAI.
 
 This module contains platform-level defaults.
 It does not launch calculations.
 """
 
-from __future__ import annotations
 
 from dataclasses import dataclass, asdict
 from typing import Any

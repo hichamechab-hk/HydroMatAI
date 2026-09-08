@@ -1,6 +1,6 @@
+from __future__ import annotations
 """Convergence analysis for QE calculations."""
 
-from __future__ import annotations
 
 from pathlib import Path
 import re

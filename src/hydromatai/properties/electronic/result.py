@@ -1,6 +1,6 @@
+from __future__ import annotations
 """Structured electronic-property results."""
 
-from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any

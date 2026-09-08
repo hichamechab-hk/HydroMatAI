@@ -1,6 +1,6 @@
+from __future__ import annotations
 """Automatic electronic-property analysis and interpretation."""
 
-from __future__ import annotations
 
 from dataclasses import dataclass
 from math import isfinite
@@ -111,6 +111,52 @@ def analyze_bands(
     if ef is None:
         ef = 0.0
 
+    # Detect metallic behavior from the band dispersion.
+    tolerance = 1.0e-8
+    metallic = False
+
+    for band in data.bands:
+        values = _finite_values(band)
+
+        # A state exactly at EF is metallic.
+        if any(
+            abs(energy - ef) <= tolerance
+            for energy in values
+        ):
+            metallic = True
+            break
+
+        # A band crossing EF between consecutive k-points
+        # is metallic.
+        for e1, e2 in zip(values, values[1:]):
+            if (
+                e1 < ef < e2
+                or
+                e2 < ef < e1
+            ):
+                metallic = True
+                break
+
+        if metallic:
+            break
+
+    if metallic:
+        return ElectronicResult(
+            success=True,
+            band_gap=0.0,
+            vbm=None,
+            cbm=None,
+            fermi_energy=ef,
+            classification="metal",
+            explanation=(
+                "Une ou plusieurs bandes traversent le niveau "
+                "de Fermi. Le système présente un comportement "
+                "métallique."
+            ),
+            band_points=len(data.kpoints),
+            band_count=len(data.bands),
+        )
+
     vbm, cbm = find_vbm_cbm(data.bands, ef)
 
     gap = None
@@ -132,7 +178,6 @@ def analyze_bands(
         band_points=len(data.kpoints),
         band_count=len(data.bands),
     )
-
 
 def analyze_dos(
     data: DOSData,

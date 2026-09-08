@@ -46,6 +46,7 @@ class QEInputGenerator:
         k_points: tuple[int, int, int] = (12, 12, 1),
         smearing: bool = True,
         degauss: float = 0.02,
+        nosym: bool = True,
     ):
         self.calculation = calculation
         self.prefix = prefix
@@ -58,6 +59,7 @@ class QEInputGenerator:
 
         self.smearing = smearing
         self.degauss = degauss
+        self.nosym = nosym
 
     def write(self, structure, workdir: Path, material_name: str = "Unknown") -> Path:
         """
@@ -174,6 +176,20 @@ class QEInputGenerator:
             )
 
         # ========================================================
+        # BLOCS SPÉCIFIQUES RELAX / VC-RELAX
+        # ========================================================
+
+        ions_block = ""
+
+        if self.calculation in {"relax", "vc-relax"}:
+            ions_block = "&IONS\n/\n"
+
+        cell_block = ""
+
+        if self.calculation == "vc-relax":
+            cell_block = "&CELL\n/\n"
+
+        # ========================================================
         # Fichier QE complet
         # ========================================================
 
@@ -192,12 +208,14 @@ class QEInputGenerator:
     ntyp = {len(symbols)},
     ecutwfc = {self.ecutwfc:.1f},
     ecutrho = {self.ecutrho:.1f},
-{smearing_block}/
+{smearing_block}{'    nosym = .true.,\n' if self.nosym else ''}/
 
 &ELECTRONS
     conv_thr = 1.0d-8,
     mixing_beta = 0.7,
 /
+
+{ions_block}{cell_block}
 
 ATOMIC_SPECIES
 {atomic_species}
@@ -215,7 +233,12 @@ CELL_PARAMETERS angstrom
         # Écriture
         # ========================================================
 
-        input_file = workdir / "scf.in"
+        # Le nom du fichier suit le type de calcul QE.
+        # Exemple :
+        #   scf     -> scf.in
+        #   relax   -> relax.in
+        #   vc-relax -> vc-relax.in
+        input_file = workdir / f"{self.calculation}.in"
 
         input_file.write_text(
             content.strip() + "\n",

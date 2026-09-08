@@ -1,6 +1,6 @@
+from __future__ import annotations
 """Streaming screening of MOF metadata."""
 
-from __future__ import annotations
 
 from pathlib import Path
 

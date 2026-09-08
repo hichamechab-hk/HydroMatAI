@@ -1,6 +1,6 @@
+from __future__ import annotations
 """Material ranking utilities."""
 
-from __future__ import annotations
 
 
 def calculate_material_score(

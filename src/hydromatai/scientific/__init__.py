@@ -1,16 +1,19 @@
-"""Scientific analysis package."""
+"""Scientific analysis utilities for HydroMatAI."""
 
-from .result import ScientificResult
 from .analysis import analyze_material
-from .ranking import calculate_material_score
-from .workflow import ScientificWorkflow
+from .evaluation import (
+    ScientificEvaluation,
+    evaluate_result,
+    evaluate_results,
+)
 from .report import write_scientific_report
-
+from .workflow import ScientificWorkflow
 
 __all__ = [
-    "ScientificResult",
+    "ScientificEvaluation",
     "ScientificWorkflow",
     "analyze_material",
-    "calculate_material_score",
+    "evaluate_result",
+    "evaluate_results",
     "write_scientific_report",
 ]

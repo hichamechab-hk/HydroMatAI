@@ -53,3 +53,27 @@ __pycache__/
 
 # Development backups
 stage_*_backup_*/
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Environnements
+.venv/
+venv/
+env/
+
+# Backups et fichiers temporaires
+backups/
+*.backup_*
+*_backup_*/
+tmp/
+
+# Résultats / fichiers temporaires Quantum Espresso
+*.save/
+*.UPF

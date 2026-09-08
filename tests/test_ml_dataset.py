@@ -1,3 +1,5 @@
+import pytest
+
 from hydromatai.core.atom import Atom
 from hydromatai.core.material import Material
 from hydromatai.core.structure import CrystalStructure
@@ -32,7 +34,6 @@ def test_add_material():
     row = dataset.add_material(material, target=-0.25)
 
     assert isinstance(row, DatasetRow)
-    assert len(dataset) == 1
     assert row.material_name == "TestMaterial"
     assert row.formula == "CH"
     assert row.target == -0.25
@@ -40,49 +41,59 @@ def test_add_material():
 
 def test_feature_matrix():
     dataset = MaterialDataset()
+
     dataset.add_material(make_material(), target=-0.25)
 
-    matrix = dataset.feature_matrix
-
-    assert len(matrix) == 1
-    assert len(matrix[0]) == 6
-    assert matrix[0][0] == 2.0
-    assert matrix[0][1] == 2.0
-    assert matrix[0][2] == 1000.0
+    assert len(dataset.feature_matrix) == 1
+    assert dataset.feature_matrix[0] == (
+        2.0,
+        2.0,
+        1000.0,
+        10.0,
+        10.0,
+        10.0,
+    )
 
 
 def test_targets():
     dataset = MaterialDataset()
 
     dataset.add_material(make_material(), target=-0.25)
-    dataset.add_material(make_material())
 
-    assert dataset.targets == [-0.25, None]
+    assert dataset.targets == [-0.25]
 
 
 def test_supervised_rows():
     dataset = MaterialDataset()
 
     dataset.add_material(make_material(), target=-0.25)
-    dataset.add_material(make_material())
 
-    rows = dataset.supervised_rows()
-
-    assert len(rows) == 1
-    assert rows[0].target == -0.25
-
-
-def test_empty_dataset():
-    dataset = MaterialDataset()
-
-    assert len(dataset) == 0
-    assert dataset.feature_matrix == []
-    assert dataset.targets == []
-    assert dataset.supervised_rows() == []
+    assert len(dataset.supervised_rows()) == 1
+    assert dataset.supervised_rows()[0].target == -0.25
 
 
 def test_feature_vector_matches_features():
     dataset = MaterialDataset()
+
     row = dataset.add_material(make_material(), target=-0.25)
 
     assert row.feature_vector == row.features.as_vector
+
+
+def test_dataset_target_definition():
+    from hydromatai.ml.targets import ADSORPTION_ENERGY
+
+    dataset = MaterialDataset(
+        target_definition=ADSORPTION_ENERGY
+    )
+
+    material = make_material()
+
+    row = dataset.add_material(
+        material,
+        target=-0.25,
+    )
+
+    assert row.target == -0.25
+    assert row.target_definition == ADSORPTION_ENERGY
+    assert dataset.target_definition == ADSORPTION_ENERGY

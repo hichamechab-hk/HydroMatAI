@@ -279,3 +279,47 @@ def test_interpret_insulator():
     )
 
     assert result.band_gap == 4.00
+
+
+def test_read_qe_bands_output(tmp_path: Path):
+
+    band_file = tmp_path / "MgH2_bands.out"
+
+    band_file.write_text(
+        """
+number of Kohn-Sham states=            4
+
+k = 0.0000 0.0000 0.0000 (  3283 PWs)   bands (ev):
+
+   -6.3816  -1.2656  -1.2656  -0.1041
+
+k = 0.0250 0.0000 0.0000 (  3271 PWs)   bands (ev):
+
+   -6.3773  -1.2975  -1.2623  -0.0850
+
+     Writing all to output data dir
+     electrons : 13.90s CPU 14.09s WALL
+""",
+        encoding="utf-8",
+    )
+
+    data = read_band_data(band_file)
+
+    assert len(data.kpoints) == 2
+    assert len(data.bands) == 4
+
+    assert data.bands[0] == [-6.3816, -6.3773]
+    assert data.bands[1] == [-1.2656, -1.2975]
+    assert data.bands[2] == [-1.2656, -1.2623]
+    assert data.bands[3] == [-0.1041, -0.0850]
+
+    # QE metadata must never become band energies.
+    all_energies = [
+        energy
+        for band in data.bands
+        for energy in band
+    ]
+
+    assert 3283 not in all_energies
+    assert 13.90 not in all_energies
+    assert 14.09 not in all_energies

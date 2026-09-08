@@ -1,6 +1,6 @@
+from __future__ import annotations
 """MOFX-DB metadata integration utilities."""
 
-from __future__ import annotations
 
 import csv
 from dataclasses import dataclass

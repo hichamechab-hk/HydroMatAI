@@ -1,6 +1,6 @@
+from __future__ import annotations
 """Automatic optical-property interpretation."""
 
-from __future__ import annotations
 
 from dataclasses import dataclass
 
@@ -16,7 +16,6 @@ class OpticalInterpretation:
     explanation: str
 
 
-
 def interpret_optical_data(
     energy: list[float],
     epsilon_imag: list[float],
@@ -26,12 +25,12 @@ def interpret_optical_data(
         return OpticalInterpretation(
             None,
             None,
-            "Données optiques insuffisantes."
+            "Données optiques insuffisantes.",
         )
 
     index = max(
         range(len(epsilon_imag)),
-        key=lambda i: abs(epsilon_imag[i])
+        key=lambda i: abs(epsilon_imag[i]),
     )
 
     peak = energy[index]
@@ -43,9 +42,8 @@ def interpret_optical_data(
             "La réponse optique maximale est associée "
             "au maximum de ε₂(ω). "
             f"Pic détecté à {peak:.4f} eV."
-        )
+        ),
     )
-
 
 
 def analyze_optical(
@@ -55,48 +53,55 @@ def analyze_optical(
     refractive_index: list[float] | None = None,
     extinction: list[float] | None = None,
     reflectivity: list[float] | None = None,
+    absorption_coefficient: list[float] | None = None,
+    energy_loss: list[float] | None = None,
 ) -> OpticalResult:
-
+    """Analyze calculated optical properties."""
 
     if not energy:
         return OpticalResult(
             success=False,
-            explanation="Aucune donnée optique."
+            explanation="Aucune donnée optique.",
         )
-
 
     absorption_peak = None
     dielectric_peak = None
     loss_peak = None
 
-
     if epsilon_imag:
         i = max(
             range(len(epsilon_imag)),
-            key=lambda x: abs(epsilon_imag[x])
+            key=lambda x: abs(epsilon_imag[x]),
         )
+
         absorption_peak = energy[i]
         dielectric_peak = energy[i]
 
-
-    losses = [
-        energy_loss_function(r, im)
-        for r, im in zip(
-            epsilon_real,
-            epsilon_imag
-        )
-    ]
-
-    if losses:
+    if energy_loss:
         j = max(
-            range(len(losses)),
-            key=lambda x: abs(losses[x])
+            range(len(energy_loss)),
+            key=lambda x: abs(energy_loss[x]),
         )
-        loss_peak = energy[j]
 
+        loss_peak = energy[j]
+    else:
+        losses = [
+            energy_loss_function(real, imag)
+            for real, imag in zip(
+                epsilon_real,
+                epsilon_imag,
+            )
+        ]
+
+        if losses:
+            j = max(
+                range(len(losses)),
+                key=lambda x: abs(losses[x]),
+            )
+
+            loss_peak = energy[j]
 
     return OpticalResult(
-
         success=True,
 
         absorption_peak_energy=absorption_peak,
@@ -105,17 +110,20 @@ def analyze_optical(
 
         refractive_index_max=(
             max(refractive_index)
-            if refractive_index else None
+            if refractive_index
+            else None
         ),
 
         extinction_max=(
             max(extinction)
-            if extinction else None
+            if extinction
+            else None
         ),
 
         reflectivity_max=(
             max(reflectivity)
-            if reflectivity else None
+            if reflectivity
+            else None
         ),
 
         classification="optically_active",
@@ -124,5 +132,5 @@ def analyze_optical(
             "Analyse optique terminée."
         ),
 
-        points=len(energy)
+        points=len(energy),
     )

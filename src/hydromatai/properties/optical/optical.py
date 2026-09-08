@@ -1,12 +1,13 @@
+from __future__ import annotations
 """Automatic optical-property calculations."""
 
-from __future__ import annotations
 
 from .dielectric import (
     DielectricData,
     refractive_index,
     extinction_coefficient,
     reflectivity,
+    energy_loss_function,
 )
 
 
@@ -17,6 +18,7 @@ def calculate_optical_properties(
     n = []
     k = []
     r = []
+    loss = []
 
     for er, ei in zip(
         data.epsilon_real,
@@ -35,6 +37,10 @@ def calculate_optical_properties(
             reflectivity(er, ei)
         )
 
+        loss.append(
+            energy_loss_function(er, ei)
+        )
+
     return {
         "energy": data.energy,
         "epsilon_real": data.epsilon_real,
@@ -42,4 +48,6 @@ def calculate_optical_properties(
         "refractive_index": n,
         "extinction_coefficient": k,
         "reflectivity": r,
+        "absorption_coefficient": k,
+        "energy_loss": loss,
     }

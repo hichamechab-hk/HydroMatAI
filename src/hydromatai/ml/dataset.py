@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 
 from hydromatai.core.material import Material
 from hydromatai.ml.features import MaterialFeatures, extract_features
+from hydromatai.ml.targets import TargetDefinition
 
 
 @dataclass(frozen=True)
@@ -14,10 +15,10 @@ class DatasetRow:
     formula: str
     features: MaterialFeatures
     target: float | None = None
+    target_definition: TargetDefinition | None = None
 
     @property
     def feature_vector(self) -> tuple[float, ...]:
-        """Vecteur numérique utilisable par un futur modèle."""
         return self.features.as_vector
 
 
@@ -26,20 +27,31 @@ class MaterialDataset:
     """Dataset de matériaux destiné aux futurs modèles ML."""
 
     rows: list[DatasetRow] = field(default_factory=list)
+    target_definition: TargetDefinition | None = None
 
     def add_material(
         self,
         material: Material,
         target: float | None = None,
     ) -> DatasetRow:
-        """Ajoute un matériau au dataset."""
         features = extract_features(material)
+
+        if (
+            target is not None
+            and self.target_definition is not None
+            and not self.target_definition.validate_value(target)
+        ):
+            raise ValueError(
+                f"Valeur de target invalide pour "
+                f"{self.target_definition.name!r}."
+            )
 
         row = DatasetRow(
             material_name=material.name,
             formula=material.formula,
             features=features,
             target=target,
+            target_definition=self.target_definition,
         )
 
         self.rows.append(row)
@@ -50,14 +62,11 @@ class MaterialDataset:
 
     @property
     def feature_matrix(self) -> list[tuple[float, ...]]:
-        """Retourne la matrice X sous forme de liste de vecteurs."""
         return [row.feature_vector for row in self.rows]
 
     @property
     def targets(self) -> list[float | None]:
-        """Retourne les cibles y."""
         return [row.target for row in self.rows]
 
     def supervised_rows(self) -> list[DatasetRow]:
-        """Retourne uniquement les observations possédant une cible."""
         return [row for row in self.rows if row.target is not None]
