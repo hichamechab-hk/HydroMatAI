@@ -1,0 +1,142 @@
+```bash
+#!/bin/bash
+
+clear
+
+cd /home/hk/HydroMatAI || exit 1
+
+echo "=============================================================================="
+echo "M2TiH6.29 — RECHERCHE READ-ONLY DE MAILLES ANALOGUES"
+echo "=============================================================================="
+echo "[INFO] MODE = READ-ONLY"
+echo "[INFO] Cibles = Ba2TiH6 / Sr2TiH6"
+echo "[INFO] Prototype = Pm-3m #221"
+echo "[INFO] Aucun pw.x"
+echo "[INFO] Aucun fichier scientifique modifié"
+echo "[INFO] Aucune valeur de maille inventée"
+echo
+
+BA="reports/m2tih6_reconstructed/Ba2TiH6_RECONSTRUCTED_NOT_PUBLISHED.cif"
+SR="reports/m2tih6_reconstructed/Sr2TiH6_RECONSTRUCTED_NOT_PUBLISHED.cif"
+
+echo "===== 1. CIF CIBLES ====="
+echo
+
+for CIF in "$BA" "$SR"
+do
+    echo "----------------------------------------------------------------------"
+    echo "$(basename "$CIF")"
+    echo "----------------------------------------------------------------------"
+
+    if [ -f "$CIF" ]
+    then
+        grep -E "^(_cell_length_a|_cell_length_b|_cell_length_c|_cell_angle_alpha|_cell_angle_beta|_cell_angle_gamma|_symmetry_space_group_name_H_M|_symmetry_Int_Tables_number)" "$CIF"
+        echo
+        sha256sum "$CIF"
+    else
+        echo "[FAIL] CIF absent : $CIF"
+    fi
+
+    echo
+done
+
+echo "===== 2. CIF Pm-3m ====="
+echo
+
+find . -type f -iname "*.cif" \
+    ! -path "./.git/*" \
+    ! -path "./.venv/*" \
+    -print0 2>/dev/null |
+while IFS= read -r -d '' CIF
+do
+    if grep -qiE "_symmetry_space_group_name_H_M.*P[[:space:]]*m[[:space:]]*-3[[:space:]]*m" "$CIF"
+    then
+        echo "[Pm-3m] $CIF"
+        grep -Ei "^(_cell_length_a|_cell_length_b|_cell_length_c|_chemical_formula_sum|_symmetry_space_group_name_H_M|_symmetry_Int_Tables_number)" "$CIF"
+        echo
+    fi
+done
+
+echo "===== 3. RECHERCHE DES ANALOGUES ====="
+echo
+
+grep -RinE \
+"Ba2TiH6|Sr2TiH6|M2TiH6|A2TiH6|Ca2TiH6|Mg2TiH6" \
+reports calculations results scripts \
+--include="*.cif" \
+--include="*.txt" \
+--include="*.csv" \
+--include="*.json" \
+--include="*.yaml" \
+--include="*.yml" \
+2>/dev/null |
+head -150
+
+echo
+echo "===== 4. RECHERCHE DES MAILLES CUBIQUES ====="
+echo
+
+find . -type f -iname "*.cif" \
+    ! -path "./.git/*" \
+    ! -path "./.venv/*" \
+    -print0 2>/dev/null |
+while IFS= read -r -d '' CIF
+do
+    A=$(grep "^_cell_length_a" "$CIF" | awk '{print $2}' | head -1)
+    B=$(grep "^_cell_length_b" "$CIF" | awk '{print $2}' | head -1)
+    C=$(grep "^_cell_length_c" "$CIF" | awk '{print $2}' | head -1)
+
+    if [ -n "$A" ] && [ -n "$B" ] && [ -n "$C" ]
+    then
+        python - "$CIF" "$A" "$B" "$C" <<'PY'
+import sys
+
+cif = sys.argv[1]
+a, b, c = map(float, sys.argv[2:])
+
+if a > 1.0 and b > 1.0 and c > 1.0:
+    if abs(a-b) < 1e-4 and abs(a-c) < 1e-4:
+        print(f"[CUBIC] {cif}")
+        print(f"        a = {a:.6f} Å")
+        print(f"        b = {b:.6f} Å")
+        print(f"        c = {c:.6f} Å")
+PY
+    fi
+done
+
+echo
+echo "===== 5. VERIFICATION DU PLACEHOLDER ====="
+echo
+
+for CIF in "$BA" "$SR"
+do
+    if [ -f "$CIF" ]
+    then
+        A=$(grep "^_cell_length_a" "$CIF" | awk '{print $2}')
+        B=$(grep "^_cell_length_b" "$CIF" | awk '{print $2}')
+        C=$(grep "^_cell_length_c" "$CIF" | awk '{print $2}')
+
+        echo "$(basename "$CIF")"
+        echo "  a = $A Å"
+        echo "  b = $B Å"
+        echo "  c = $C Å"
+
+        if [ "$A" = "1.0000000000" ] &&
+           [ "$B" = "1.0000000000" ] &&
+           [ "$C" = "1.0000000000" ]
+        then
+            echo "  [CRITICAL] MAILLE 1 Å = PLACEHOLDER"
+        fi
+
+        echo
+    fi
+done
+
+echo "=============================================================================="
+echo "VERDICT M2TiH6.29"
+echo "=============================================================================="
+echo "[STRICT] Aucune maille analogue n'est adoptée automatiquement."
+echo "[STRICT] Aucune valeur de maille n'est inventée."
+echo "[STRICT] Aucun calcul QE."
+echo "[STRICT] CIF = RECONSTRUCTED / NOT PUBLISHED."
+echo "=============================================================================="
