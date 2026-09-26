@@ -1,3 +1,4 @@
+import sys
 from pathlib import Path
 
 from hydromatai.core.atom import Atom
@@ -53,7 +54,7 @@ JOB DONE.
 
     runner = DFTRunner(
         [
-            "python",
+            sys.executable,
             "-c",
             f"print({qe_output!r})",
         ]
@@ -104,7 +105,7 @@ convergence NOT achieved
 
     runner = DFTRunner(
         [
-            "python",
+            sys.executable,
             "-c",
             f"print({qe_output!r})",
         ]
@@ -142,7 +143,7 @@ cannot allocate memory
 
     runner = DFTRunner(
         [
-            "python",
+            sys.executable,
             "-c",
             f"print({qe_output!r})",
         ]

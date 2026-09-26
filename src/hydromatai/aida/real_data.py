@@ -120,11 +120,24 @@ def _historical_electronic_outputs_available() -> bool:
 
 
 def _campaign_scf_records() -> list[dict]:
+    """
+    Construit l'inventaire des sorties SCF de la campagne.
+
+    Contrairement à l'ancienne version, les fichiers sans
+    énergie totale ne sont plus silencieusement éliminés.
+
+    Chaque sortie est conservée dans l'inventaire avec :
+      - path
+      - energy
+      - converged
+      - complete
+    """
+
     records = []
 
     for path in _all_campaign_outputs():
 
-        # Les deux fichiers kpoints_smearing_0.002Ry
+        # Les fichiers kpoints_smearing_0.002Ry
         # sont des sorties auxiliaires et ne font pas partie
         # des trois séries principales.
         if "kpoints_smearing_0.002Ry" in str(path):
@@ -133,14 +146,12 @@ def _campaign_scf_records() -> list[dict]:
         text = _read(path)
         energy = _energy(text)
 
-        if energy is None:
-            continue
-
         records.append(
             {
                 "path": path,
                 "energy": energy,
                 "converged": _converged(text),
+                "complete": energy is not None,
             }
         )
 
@@ -148,23 +159,42 @@ def _campaign_scf_records() -> list[dict]:
 
 
 def build_tifeh2_numerical_evidence() -> NumericalEvidence:
+    """
+    Construit l'evidence numerique réelle de la campagne TiFeH2.
+
+    Les sorties sont comptées même lorsqu'elles sont incomplètes.
+
+    Pour la campagne actuelle :
+      - 15 sorties principales détectées
+      - 13 avec énergie exploitable
+      - 13 convergées
+      - 2 incomplètes
+    """
+
     cutoff = _cutoff_outputs()
     kpoints = _kpoints_outputs()
     smearing = _smearing_outputs()
 
     scf_records = _campaign_scf_records()
 
+    scf_total = len(scf_records)
+
     scf_converged = sum(
         1
         for record in scf_records
-        if record["converged"]
+        if record["complete"] and record["converged"]
     )
 
-    scf_total = len(scf_records)
+    scf_incomplete = sum(
+        1
+        for record in scf_records
+        if not record["complete"]
+    )
 
     return NumericalEvidence(
         scf_converged=scf_converged,
         scf_total=scf_total,
+        scf_incomplete=scf_incomplete,
         cutoff_status=_series_status(cutoff),
         kpoints_status=_series_status(kpoints),
         smearing_status=_series_status(smearing),

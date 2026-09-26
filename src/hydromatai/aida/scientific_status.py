@@ -24,6 +24,9 @@ class NumericalEvidence:
     Resume de l'evidence numerique QE.
 
     Cette classe ne represente pas une validation scientifique.
+
+    scf_incomplete indique le nombre de sorties SCF detectees
+    mais ne contenant pas d'energie totale exploitable.
     """
 
     scf_converged: int
@@ -34,6 +37,7 @@ class NumericalEvidence:
     smearing_status: NumericalStatus
 
     electronic_outputs_available: bool = False
+    scf_incomplete: int = 0
 
     @property
     def all_series_stable(self) -> bool:

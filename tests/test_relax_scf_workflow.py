@@ -1,3 +1,4 @@
+import sys
 from pathlib import Path
 
 from hydromatai.core.atom import Atom
@@ -62,7 +63,7 @@ JOB DONE.
 
     return DFTRunner(
         [
-            "python",
+            sys.executable,
             "-c",
             f"print({output!r})",
         ]
@@ -86,7 +87,7 @@ JOB DONE.
 
     return DFTRunner(
         [
-            "python",
+            sys.executable,
             "-c",
             f"print({output!r})",
         ]
@@ -202,7 +203,7 @@ convergence NOT achieved
     relax = QuantumEspressoCalculator(
         runner=DFTRunner(
             [
-                "python",
+                sys.executable,
                 "-c",
                 f"print({output!r})",
             ]
@@ -251,7 +252,7 @@ convergence NOT achieved
     scf = QuantumEspressoCalculator(
         runner=DFTRunner(
             [
-                "python",
+                sys.executable,
                 "-c",
                 f"print({output!r})",
             ]

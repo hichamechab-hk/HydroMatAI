@@ -1,3 +1,4 @@
+import sys
 from pathlib import Path
 
 from hydromatai.core.atom import Atom
@@ -48,7 +49,7 @@ def test_quantum_espresso_calculator(tmp_path: Path):
 
     runner = DFTRunner(
         [
-            "python",
+            sys.executable,
             "-c",
             "print('!    total energy              =   -10.12345678 Ry')",
         ]
