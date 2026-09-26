@@ -4,6 +4,8 @@ import re
 from pathlib import Path
 
 from .scientific_status import NumericalEvidence, NumericalStatus
+from hydromatai.dft.validation.kpoint_audit import parse_kpoint_output
+from hydromatai.dft.validation.kpoint_analyzer import analyze_kpoint_convergence
 
 
 PROJECT_ROOT = Path("/home/hk/HydroMatAI")
@@ -82,15 +84,57 @@ def _cutoff_outputs() -> list[Path]:
 
 
 def _kpoints_outputs() -> list[Path]:
+    """
+    Retourne exclusivement les sorties de la campagne k-points 140/560 Ry
+    lorsqu'elle existe.
+
+    Une ancienne campagne ne doit jamais être mélangée à la campagne
+    scientifique actuelle.
+    """
     return sorted(
         path
         for path in _all_campaign_outputs()
         if re.search(
-            r"run_kpoints_\d+x\d+x\d+/TiFeH2_kpoints_\d+\.out$",
+            r"run_kpoints_\d+x\d+x\d+_140Ry/"
+            r"TiFeH2_kpoints_\d+x\d+x\d+_140\.out$",
             str(path),
             flags=re.IGNORECASE,
         )
     )
+
+def _kpoint_grid(path: Path) -> str:
+    match = re.search(
+        r"run_kpoints_(\d+x\d+x\d+)(?:_140Ry)?",
+        str(path),
+        re.IGNORECASE,
+    )
+
+    if not match:
+        raise ValueError(
+            f"Grille k-points introuvable dans {path}"
+        )
+
+    return match.group(1)
+
+
+def _kpoints_status(paths: list[Path]) -> NumericalStatus:
+    results = [
+        parse_kpoint_output(_kpoint_grid(path), path)
+        for path in sorted(paths)
+    ]
+
+    report = analyze_kpoint_convergence(
+        results,
+        threshold_ry=THRESHOLD_RY,
+    )
+
+    if report.status == "INSUFFICIENT_DATA":
+        return NumericalStatus.INSUFFICIENT
+
+    if report.status == "NUMERICAL_STABILITY_ESTABLISHED":
+        return NumericalStatus.ESTABLISHED
+
+    return NumericalStatus.NOT_ESTABLISHED
 
 
 def _smearing_outputs() -> list[Path]:
@@ -196,7 +240,7 @@ def build_tifeh2_numerical_evidence() -> NumericalEvidence:
         scf_total=scf_total,
         scf_incomplete=scf_incomplete,
         cutoff_status=_series_status(cutoff),
-        kpoints_status=_series_status(kpoints),
+        kpoints_status=_kpoints_status(kpoints),
         smearing_status=_series_status(smearing),
         electronic_outputs_available=(
             _historical_electronic_outputs_available()

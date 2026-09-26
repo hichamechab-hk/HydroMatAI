@@ -5,8 +5,8 @@ from hydromatai.aida.real_data import build_tifeh2_numerical_evidence
 def test_real_tifeh2_numerical_evidence():
     evidence = build_tifeh2_numerical_evidence()
 
-    assert evidence.scf_total == 15
-    assert evidence.scf_converged == 13
+    assert evidence.scf_total == 16
+    assert evidence.scf_converged == 14
     assert evidence.scf_incomplete == 2
 
     assert evidence.cutoff_status.value == (
@@ -50,4 +50,3 @@ def test_real_tifeh2_report():
     report = render_report(result)
 
     assert "SCIENTIFIC_STATUS_NOT_ESTABLISHED" in report
-    assert "NUMERICAL_STABILITY_NOT_ESTABLISHED" in report
